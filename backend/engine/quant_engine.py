@@ -686,7 +686,14 @@ async def _persist_alert(
     user_id: ObjectId,
     rule: _RuleResult,
 ) -> Optional[ObjectId]:
-    """Insert an alert document, respecting the rate-limit guard."""
+    """
+    Insert an alert document, respecting the rate-limit guard.
+    Immediately push the alert to the user's WebSocket connections
+    if they are online (PRD §6.2.4).
+    """
+    # Import here to avoid circular imports at module level
+    from services.websocket_manager import ws_manager
+
     if await _is_rate_limited(user_id, rule.rule_id):
         logger.debug(
             "Alert %s suppressed for user %s (rate-limited)", rule.rule_id, user_id
@@ -728,8 +735,42 @@ async def _persist_alert(
 
     db = get_database()
     result = await db.alerts_log.insert_one(doc)
-    logger.info("Alert %s persisted for user %s (id=%s)", rule.rule_id, user_id, result.inserted_id)
-    return result.inserted_id
+    alert_id = result.inserted_id
+    logger.info("Alert %s persisted for user %s (id=%s)", rule.rule_id, user_id, alert_id)
+
+    # ── WebSocket push (non-blocking) ────────────────────────────────
+    user_id_str = str(user_id)
+    if ws_manager.is_connected(user_id_str):
+        ws_payload = {
+            "type": "alert",
+            "alert": {
+                "id": str(alert_id),
+                "rule_id": rule.rule_id,
+                "rule_name": rule.rule_name,
+                "severity": rule.severity,
+                "title": rule.title,
+                "message": rule.message,
+                "recommendation": rule.recommendation,
+                "triggered_at": now.isoformat(),
+            },
+        }
+        sent_count = await ws_manager.send_personal_message(user_id_str, ws_payload)
+
+        if sent_count > 0:
+            # Update delivery status in MongoDB
+            await db.alerts_log.update_one(
+                {"_id": alert_id},
+                {"$set": {
+                    "delivery.websocket_sent": True,
+                    "delivery.websocket_sent_at": now,
+                }},
+            )
+            logger.info(
+                "Alert %s pushed to %d WS connection(s) for user %s",
+                rule.rule_id, sent_count, user_id,
+            )
+
+    return alert_id
 
 
 # ═════════════════════════════════════════════════════════════════════════
