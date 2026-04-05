@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import connect_to_mongo, close_mongo_connection, ensure_indexes, get_database
 from api.sync import router as sync_router
+from api.engine import router as engine_router
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -59,6 +60,7 @@ app.add_middleware(
 
 # ── Routers ──────────────────────────────────────────────────────────────
 app.include_router(sync_router)
+app.include_router(engine_router)
 
 
 # ── Routes ───────────────────────────────────────────────────────────────
