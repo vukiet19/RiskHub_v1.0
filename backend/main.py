@@ -17,6 +17,7 @@ from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import connect_to_mongo, close_mongo_connection, ensure_indexes, get_database
+from api.sync import router as sync_router
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -55,6 +56,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Routers ──────────────────────────────────────────────────────────────
+app.include_router(sync_router)
 
 
 # ── Routes ───────────────────────────────────────────────────────────────
