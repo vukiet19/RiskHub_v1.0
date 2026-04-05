@@ -1,13 +1,86 @@
+"use client";
+
+import { useEffect, useState, useCallback } from "react";
 import { Sidebar } from "../components/Sidebar";
 import { Navbar } from "../components/Navbar";
 import { PortfolioCard } from "../components/PortfolioCard";
 import { ContagionGraph } from "../components/ContagionGraph";
-import { AlertsPanel } from "../components/AlertsPanel";
+import { AlertsPanel, AlertData } from "../components/AlertsPanel";
 import { OpenPositions } from "../components/OpenPositions";
+import { useRiskWebSocket } from "../hooks/useRiskWebSocket";
+import { Toaster } from "sonner";
+
+// Use a mock valid MongoDB ObjectId for MVP testing
+const DUMMY_USER_ID = "64f1a2b3c4d5e6f7a8b9c0d1";
 
 export default function Dashboard() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [metrics, setMetrics] = useState<any>(null);
+  const [alerts, setAlerts] = useState<AlertData[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // Fallback to "F" grade if undefined
+  const disciplineScore = metrics?.discipline_score?.total ?? 0;
+  const disciplineGrade = metrics?.discipline_score?.grade ?? "F";
+  const drawdownPct = metrics?.max_drawdown?.value_pct ?? "0.00";
+  const netPnlUsd = metrics?.net_pnl_usd ?? "0.00";
+
+  // Initial Fetch Data
+  useEffect(() => {
+    async function fetchDashboard() {
+      try {
+        const [metricsRes, alertsRes] = await Promise.all([
+          fetch(`http://localhost:8000/api/v1/dashboard/${DUMMY_USER_ID}/metrics`),
+          fetch(`http://localhost:8000/api/v1/dashboard/${DUMMY_USER_ID}/alerts?unread_only=true`)
+        ]);
+
+        if (metricsRes.ok) {
+          const mData = await metricsRes.json();
+          setMetrics(mData.data);
+        }
+
+        if (alertsRes.ok) {
+          const aData = await alertsRes.json();
+          // Filter to just map what we need
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const formattedAlerts = aData.alerts.map((a: any) => ({
+            id: a._id || Math.random().toString(),
+            rule_id: a.rule_id,
+            rule_name: a.rule_name,
+            severity: a.severity,
+            title: a.title,
+            message: a.message,
+            triggered_at: a.triggered_at,
+            is_read: a.is_read
+          }));
+          setAlerts(formattedAlerts);
+        }
+      } catch (err) {
+        console.error("Dashboard data fetch error:", err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    fetchDashboard();
+  }, []);
+
+  // Set up WebSocket for real-time alert updates
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const handleNewAlert = useCallback((newAlert: any) => {
+    setAlerts((prev) => {
+      // Prepend the new alert, limit to 20 visually maybe, but just prepend for now
+      return [newAlert, ...prev];
+    });
+  }, []);
+
+  useRiskWebSocket({
+    userId: DUMMY_USER_ID,
+    onNewAlert: handleNewAlert
+  });
+
   return (
     <div className="flex h-screen overflow-hidden bg-transparent">
+      <Toaster position="top-right" expand={false} theme="dark" />
       <Sidebar />
       <div className="flex flex-col flex-1 overflow-hidden relative">
         {/* Subtle background glow effect */}
@@ -19,7 +92,10 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
             {/* Column 1 (narrow) */}
             <div className="lg:col-span-3 flex flex-col gap-6">
-              <PortfolioCard />
+              <PortfolioCard 
+                exchanges={metrics?.by_exchange || []} 
+                totalUnrealizedPnl={netPnlUsd} 
+              />
               {/* Discipline Score gauge */}
               <div className="glass-card rounded-2xl p-6 relative overflow-hidden group hover:border-primary/30 transition-all duration-300">
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl group-hover:bg-primary/20 transition-colors"></div>
@@ -34,18 +110,18 @@ export default function Dashboard() {
                      {/* Score ring */}
                      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
                         <circle cx="50" cy="50" r="45" className="stroke-white/10 stroke-[8px] fill-transparent" />
-                        <circle cx="50" cy="50" r="45" className="stroke-primary stroke-[8px] fill-transparent" strokeDasharray="283" strokeDashoffset="79" strokeLinecap="round" />
+                        <circle cx="50" cy="50" r="45" className="stroke-primary stroke-[8px] fill-transparent" strokeDasharray="283" strokeDashoffset={`${283 - (283 * disciplineScore) / 100}`} strokeLinecap="round" />
                      </svg>
                      <div className="absolute flex flex-col items-center justify-center">
-                       <span className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">72</span>
-                       <span className="text-xs text-primary font-medium tracking-wide mt-1">GOOD</span>
+                       <span className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">{disciplineScore}</span>
+                       <span className="text-xs text-primary font-medium tracking-wide mt-1">GRADE: {disciplineGrade}</span>
                      </div>
                    </div>
                 </div>
                 <div className="text-center mt-4">
                   <div className="inline-flex items-center gap-2 bg-success/10 text-success px-3 py-1.5 rounded-full text-sm font-medium border border-success/20">
                     <div className="w-1.5 h-1.5 rounded-full bg-success"></div>
-                    Grade: C+ (Improving)
+                    {isLoading ? 'Loading...' : `Grade: ${disciplineGrade}`}
                   </div>
                 </div>
               </div>
@@ -73,12 +149,12 @@ export default function Dashboard() {
             {/* Column 3 (narrow) */}
             <div className="lg:col-span-3 flex flex-col gap-6">
               <OpenPositions />
-              <AlertsPanel />
+              <AlertsPanel alerts={alerts} />
               <div className="glass-card rounded-2xl p-5 hover:border-danger/30 transition-colors duration-300">
                  <h3 className="text-base font-semibold mb-3 text-white">Drawdown Impact</h3>
                  <div className="flex justify-between items-center bg-gradient-to-r from-danger/20 to-danger/5 border border-danger/30 rounded-xl p-4 shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)]">
                    <div className="flex flex-col">
-                     <span className="text-danger font-bold text-xl font-mono tracking-tight">-18.42%</span>
+                     <span className="text-danger font-bold text-xl font-mono tracking-tight">-{drawdownPct}%</span>
                      <span className="text-[10px] text-danger/70 uppercase tracking-wider mt-1">Peak-to-Trough</span>
                    </div>
                    <div className="w-10 h-10 rounded-full bg-danger/10 flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.3)]">
