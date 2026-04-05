@@ -1,0 +1,24 @@
+{
+  "name": "riskhub_v1.0",
+  "version": "1.0.0",
+  "description": "Hi i'm Kiet",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vukiet19/RiskHub_v1.0.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/vukiet19/RiskHub_v1.0/issues"
+  },
+  "homepage": "https://github.com/vukiet19/RiskHub_v1.0#readme",
+  "dependencies": {
+    "pdf-parse": "^1.1.1"
+  }
+}

@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+websockets
+motor
+redis
+ccxt
+celery
+python-dotenv
+pycryptodome
+pydantic[email]

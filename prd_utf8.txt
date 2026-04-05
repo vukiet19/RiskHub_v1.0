@@ -1,0 +1,876 @@
+
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 1  |  Confidential & Proprietary 
+ 
+ 
+ 
+PRODUCT REQUIREMENTS DOCUMENT 
+RiskHub 
+A Proactive Web3 Cross-Exchange Risk Management 
+and Behavioral Identity Platform 
+Document Version 1.0 — MVP 
+Status Draft — For Review 
+Date Q3 2025 
+Classification Confidential & Proprietary 
+ 
+ 
+ 
+ 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 2  |  Confidential & Proprietary 
+Table of Contents 
+Table of Contents ............................................................................................................................ 2 
+1. Executive Summary ..................................................................................................................... 4 
+2. Problem Statement ...................................................................................................................... 5 
+2.1  Fragmented Cross-Exchange Portfolio Visibility .................................................................... 5 
+2.2  Behavioral Undiscipline and Emotional Trading ..................................................................... 5 
+2.3  Absence of Verifiable Trader Identity and Performance Records ........................................... 5 
+3. Goals, Objectives & Success Metrics ........................................................................................... 6 
+3.1  Product Goals ........................................................................................................................ 6 
+3.2  MVP Success Metrics (OKRs) ............................................................................................... 6 
+4. Target Audience & User Personas ............................................................................................... 7 
+4.1  Primary Persona: The Active Retail Trader ............................................................................ 7 
+4.2  Secondary Persona: The Copy-Trade Expert / Signal Provider ............................................. 7 
+4.3  Tertiary Persona: The Copy-Trade Follower .......................................................................... 7 
+5. System Architecture ..................................................................................................................... 8 
+5.1  Architecture Overview ........................................................................................................... 8 
+5.2  Data Flow — Read-Only Ingestion Pipeline ........................................................................... 8 
+5.3  Data Flow — Quant Engine & Alert Pipeline .......................................................................... 8 
+5.4  Data Flow — SBT Minting Pipeline ........................................................................................ 9 
+5.5  Security Architecture ............................................................................................................. 9 
+6. Detailed Functional Requirements ............................................................................................. 10 
+6.1  Feature: Read-Only Cross-Exchange Data Ingestion .......................................................... 10 
+6.1.1  User Story ..................................................................................................................... 10 
+6.1.2  Functional Specifications............................................................................................... 10 
+6.1.3  MVP Acceptance Criteria .............................................................................................. 10 
+6.2  Feature: Behavioral Quant Engine & Dynamic Risk Alerts ................................................... 11 
+6.2.1  User Story ..................................................................................................................... 11 
+6.2.2  Behavioral Rules Engine — Rule Definitions ................................................................. 11 
+6.2.3  Calculated Metrics ........................................................................................................ 12 
+6.2.4  Alert Delivery Requirements .......................................................................................... 12 
+6.2.5  MVP Acceptance Criteria .............................................................................................. 12 
+6.3  Feature: Asset Contagion Graph ......................................................................................... 13 
+6.3.1  User Story ..................................................................................................................... 13 
+6.3.2  Functional Specifications............................................................................................... 13 
+6.3.3  MVP Acceptance Criteria .............................................................................................. 13 
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 3  |  Confidential & Proprietary 
+6.4  Feature: Web3 Immutable Trading Identity (SBT Minting) ................................................... 13 
+6.4.1  User Story ..................................................................................................................... 14 
+6.4.2  Smart Contract Specifications ....................................................................................... 14 
+6.4.3  On-Chain Data Payload ................................................................................................ 14 
+6.4.4  Frontend Minting Flow ................................................................................................... 14 
+6.4.5  MVP Acceptance Criteria .............................................................................................. 15 
+7. UI/UX Requirements .................................................................................................................. 16 
+7.1  Design Language ................................................................................................................ 16 
+7.2  Core Dashboard Layout....................................................................................................... 16 
+8. Non-Functional Requirements .................................................................................................... 17 
+9. MVP Scope Definition ................................................................................................................ 18 
+9.1  In Scope for MVP ................................................................................................................ 18 
+10. Delivery Plan & Sprint Milestones ............................................................................................ 19 
+11. Risks, Assumptions & Dependencies ....................................................................................... 20 
+11.1  Key Risks .......................................................................................................................... 20 
+11.2  Assumptions ...................................................................................................................... 20 
+11.3  External Dependencies...................................................................................................... 20 
+12. Open Questions & Decisions Required .................................................................................... 22 
+13. Glossary of Terms .................................................................................................................... 23 
+14. Approval & Sign-Off ................................................................................................................. 23 
+ 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 4  |  Confidential & Proprietary 
+1. Executive Summary 
+RiskHub is a proactive, read-only Web3 portfolio risk management platform designed to serve 
+crypto investors operating across multiple centralized exchanges. In a market defined by emotional 
+volatility, opaque performance claims, and fragmented asset visibility, RiskHub positions itself not 
+as a trading tool, but as a behavioral and analytical shield — a platform that observes, quantifies, 
+and warns. 
+ 
+The platform solves three compounding problems that disproportionately harm retail traders: (1) the 
+inability to see one's full cross-exchange risk exposure in a single view; (2) the lack of an objective 
+feedback mechanism to identify and interrupt emotional trading behaviors; and (3) the absence of 
+tamper-proof, verifiable on-chain credentials for trading performance, which enables fraudulent 
+copy-trade schemes. 
+ 
+RiskHub addresses each of these through four integrated core capabilities: cross-exchange read-
+only data ingestion via the CCXT library, a real-time Python-based Behavioral Quant Engine, an 
+interactive Asset Contagion Graph, and an immutable Web3 Soulbound Token (SBT) that 
+permanently encodes a user's verified trading discipline on-chain. 
+ 
+The MVP scope targets active crypto traders on Binance and OKX, delivering a functional 
+dashboard, behavioral alerting system, and SBT minting on BNB Chain Testnet within a 16-week 
+build cycle. 
+ 
+Attribute Detail Attribute Detail 
+Product Name RiskHub Lead Author Product Management 
+Team 
+Version 1.0 (MVP) Stakeholders Product, Engineering, 
+Design, Legal 
+Target Launch Q4 2025 Review Cycle Bi-weekly Sprint Review 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 5  |  Confidential & Proprietary 
+2. Problem Statement 
+The cryptocurrency trading ecosystem imposes asymmetric information disadvantages on retail 
+participants. Three structural problems converge to create an environment where retail traders 
+consistently underperform and are actively exploited. 
+ 
+2.1  Fragmented Cross-Exchange Portfolio Visibility 
+Professional and retail traders alike routinely operate across 3–10 exchanges simultaneously to 
+access diverse liquidity pools, hedging instruments, and yield products. No native tooling 
+aggregates Spot and Futures balances — including unrealized PnL, locked margin, and liquidation 
+thresholds — into a single, coherent risk view. This fragmentation systematically conceals true 
+portfolio exposure and prevents rational risk-adjusted decision-making. 
+ 
+2.2  Behavioral Undiscipline and Emotional Trading 
+Quantitative studies of retail trading outcomes consistently identify behavioral patterns — not 
+market conditions — as the primary cause of account drawdowns. Patterns such as Revenge 
+Trading (immediately increasing leverage following a loss), Overtrading (high-frequency position 
+entry without edge), and Averaging Down into losing positions are broadly documented. No existing 
+retail platform provides a real-time feedback mechanism that detects and interrupts these patterns 
+as they form. The gap between knowing a behavior is harmful and receiving an objective, in-context 
+warning is the precise space RiskHub occupies. 
+ 
+2.3  Absence of Verifiable Trader Identity and Performance Records 
+The copy-trading and signal-selling industry is riddled with fraud. Manipulated PnL screenshots, 
+selective track records, and fabricated win-rate statistics are standard practice among fraudulent 
+'crypto gurus'. Platforms that facilitate copy-trading have no reliable mechanism to verify the true 
+historical risk-adjusted performance of a signal provider. This information asymmetry causes 
+measurable financial harm to thousands of followers who allocate capital to unverified traders. The 
+solution requires a tamper-proof, publicly queryable, and immutable record of a trader's true 
+behavioral discipline and performance metrics — one that cannot be cherry-picked, edited, or 
+deleted. 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 6  |  Confidential & Proprietary 
+3. Goals, Objectives & Success Metrics 
+3.1  Product Goals 
+• Provide retail crypto traders with a single-pane-of-glass view of their cross-exchange 
+portfolio risk exposure. 
+• Detect and proactively interrupt emotional and undisciplined trading behaviors in real time. 
+• Create an immutable, blockchain-based trading identity that transparently communicates a 
+trader's true risk profile. 
+• Build a trust layer for the copy-trading ecosystem by enabling credential verification via on-
+chain SBTs. 
+ 
+3.2  MVP Success Metrics (OKRs) 
+Objective Key Result Target (MVP Launch + 90 days) 
+User Adoption Registered users with at least 1 
+connected exchange 
+500 active users 
+Engagement Daily Active Users / Monthly 
+Active Users ratio 
+>= 35% DAU/MAU 
+Alert Efficacy Behavioral alerts acknowledged 
+by user (not dismissed) 
+>= 60% acknowledgement rate 
+Web3 Adoption SBTs minted by users with >= 
+30 days of trade history 
+>= 150 SBTs minted 
+Data Integrity API key read-only enforcement 
+verified 
+0 instances of write/withdrawal 
+access 
+Performance Dashboard data refresh latency 
+(P95) 
+< 3 seconds 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 7  |  Confidential & Proprietary 
+4. Target Audience & User Personas 
+4.1  Primary Persona: The Active Retail Trader 
+Attribute Description 
+Name Alex — The Active Trader 
+Demographics 25–40 years old, tech-comfortable, trades crypto as a primary or secondary 
+income source 
+Behaviors Maintains accounts on 2–5 exchanges simultaneously; actively trades Spot 
+and Futures; checks positions multiple times daily; follows trading 
+communities online 
+Pain Points Cannot aggregate total portfolio exposure; has experienced revenge trading 
+patterns; doubts the legitimacy of copy-trade gurus; fears providing API keys 
+to third-party platforms 
+Goals Maximize risk-adjusted returns; improve emotional discipline; build a verifiable 
+track record to attract copy-traders; minimize catastrophic drawdowns 
+Motivation to Use 
+RiskHub 
+Wants a trusted, read-only tool that helps them understand and manage risk 
+without requiring platform custody of funds 
+ 
+4.2  Secondary Persona: The Copy-Trade Expert / Signal Provider 
+Attribute Description 
+Name Jordan — The Signal Provider 
+Behaviors Shares trading signals or runs copy-trade groups; needs to prove legitimacy 
+to attract followers; uses social media and trading platforms for community 
+building 
+Pain Points Followers are skeptical due to widespread fake PnL; no portable, trusted 
+credential for performance; competes with fraudulent actors 
+Goal Mint an immutable, public SBT that objectively demonstrates their discipline 
+score, max drawdown, and win rate — shareable as a trust badge 
+ 
+4.3  Tertiary Persona: The Copy-Trade Follower 
+A risk-averse investor who allocates capital to copy-trade experts but lacks the tools to 
+independently verify performance claims. RiskHub's SBT system provides this user with an on-
+chain data source that can be queried before committing funds. 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 8  |  Confidential & Proprietary 
+5. System Architecture 
+5.1  Architecture Overview 
+RiskHub is built on a four-layer architecture designed for high performance, security, and 
+extensibility. Each layer has a defined responsibility boundary and communicates with adjacent 
+layers through well-defined APIs and event streams. 
+ 
+Layer Technology Stack Responsibilities 
+Client Layer Next.js 14, React, TypeScript, Tailwind 
+CSS, TradingView Lightweight Charts, 
+React Flow, Wagmi, RainbowKit 
+UI rendering, wallet connection, real-
+time data display, WebSocket event 
+handling, alert delivery 
+Server Layer Python 3.11, FastAPI, CCXT, 
+WebSockets, Celery (task queue) 
+Exchange API orchestration, quant 
+engine execution, alert generation, 
+Oracle signing, REST + WebSocket 
+API serving 
+Data Layer MongoDB (primary), Redis (caching & 
+pub/sub) 
+Persistent storage of trade history, 
+user profiles, SBT metadata, risk 
+metrics time-series; caching for real-
+time dashboard data 
+Web3 / 
+Blockchain Layer 
+Web3.py, Solidity ^0.8.x, BNB Chain 
+Testnet / Ethereum Sepolia, ERC-
+5114 / ERC-721 
+Off-chain Oracle data signing, smart 
+contract interaction, SBT minting, on-
+chain risk record storage and public 
+query interface 
+ 
+5.2  Data Flow — Read-Only Ingestion Pipeline 
+User provides read-only API key and secret via the frontend. Credentials are encrypted (AES-256) 
+before storage in MongoDB. The FastAPI backend invokes the CCXT library to fetch balances, 
+positions, and trade history from the target exchange. Fetched data is normalized to a unified 
+schema and stored in MongoDB. A background Celery task re-fetches data on a configurable 
+schedule (default: every 60 seconds for live positions, every 5 minutes for historical trade data). 
+Normalized data is published to a Redis pub/sub channel, which the WebSocket server subscribes 
+to, pushing updates to connected frontend clients. 
+ 
+5.3  Data Flow — Quant Engine & Alert Pipeline 
+Upon each data update, the Quant Engine is invoked as a Celery task. The engine reads trade 
+history from MongoDB and applies the full suite of heuristic rule evaluators (see Section 6.2). Any 
+triggered rules generate Alert objects, which are persisted to MongoDB and simultaneously pushed 
+via WebSocket to the connected frontend client. The frontend renders alerts as dynamic, non-
+blocking overlay notifications. 
+ 
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 9  |  Confidential & Proprietary 
+5.4  Data Flow — SBT Minting Pipeline 
+User initiates SBT mint from the frontend. The backend aggregates the user's complete risk metrics 
+payload (drawdown, win rate, leverage profile, discipline score) and signs it using a private key held 
+by the RiskHub Oracle service (Web3.py). The signed payload and signature are returned to the 
+frontend. The user's MetaMask wallet (connected via Wagmi + RainbowKit) submits a transaction to 
+the RiskHubSBT smart contract, calling the mint function with the signed payload. The smart 
+contract verifies the Oracle's signature, creates a non-transferable SBT bound to the user's wallet 
+address, and emits a SBTMinted event. The token is publicly queryable on-chain by any third party. 
+ 
+5.5  Security Architecture 
+• Read-Only Enforcement: CCXT library is configured exclusively with read-scope API keys. 
+No trade execution, withdrawal, or fund transfer methods are called or exposed. 
+• Credential Security: Exchange API keys are encrypted at rest using AES-256 symmetric 
+encryption. Encryption keys are managed via environment secrets (not stored in the 
+database). 
+• Oracle Key Security: The RiskHub Oracle signing key is stored in a Hardware Security 
+Module (HSM) or secure key vault in production. The key is never exposed to the client 
+layer. 
+• Authentication: All backend API endpoints require JWT authentication. Web3 wallet 
+signature (Sign-In With Ethereum / Sign-In With BNB) is supported as an alternative auth 
+mechanism. 
+• Network Security: All client-server communication over HTTPS/WSS. CORS restricted to 
+known frontend origin domains. 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 10  |  Confidential & Proprietary 
+6. Detailed Functional Requirements 
+This section defines each product feature in terms of user stories, detailed behavior, and MVP 
+acceptance criteria. 
+ 
+6.1  Feature: Read-Only Cross-Exchange Data Ingestion 
+Priority: P0 — MVP Critical 
+ 
+6.1.1  User Story 
+As an active trader, I want to connect my exchange accounts using read-only API keys so that 
+RiskHub can aggregate my portfolio data without ever having access to execute trades or withdraw 
+funds. 
+ 
+6.1.2  Functional Specifications 
+• The system shall support API key connection for Binance and OKX in the MVP, with a 
+framework extensible to all 100+ CCXT-supported exchanges in future phases. 
+• The API key connection interface shall clearly label each permission scope (Read-Only) and 
+block any attempt to store keys with write or withdrawal permissions. 
+• The system shall fetch and unify the following data points per connected exchange: total 
+account balance (USDT equivalent), Spot holdings (asset, quantity, current value), active 
+Futures positions (symbol, side, entry price, current price, leverage, unrealized PnL, 
+liquidation price, margin used), and historical closed trades (timestamp, symbol, side, 
+quantity, entry price, exit price, realized PnL, leverage used). 
+• All data from multiple exchanges shall be normalized to a single internal schema and 
+aggregated into a unified portfolio view, denominated in USDT. 
+• The system shall re-sync live position data every 60 seconds and historical trade data every 
+5 minutes. 
+• If an exchange API key becomes invalid or returns an error, the system shall surface a non-
+blocking warning notification to the user without crashing the dashboard. 
+ 
+6.1.3  MVP Acceptance Criteria 
+1. A user can successfully add a Binance read-only API key and see their Spot and Futures 
+portfolio data rendered on the dashboard within 10 seconds of connection. 
+2. A user can successfully add an OKX read-only API key, and data from both exchanges is 
+aggregated and displayed in a single unified balance view. 
+3. The system is demonstrably incapable of placing any trade or withdrawal on a connected 
+exchange account (verified via CCXT configuration audit). 
+4. An invalid or expired API key triggers a user-visible warning badge on the exchange 
+connection panel within one refresh cycle. 
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 11  |  Confidential & Proprietary 
+5. Portfolio balance values update without requiring a manual page refresh (WebSocket-driven 
+updates confirmed). 
+ 
+6.2  Feature: Behavioral Quant Engine & Dynamic Risk Alerts 
+Priority: P0 — MVP Critical 
+ 
+6.2.1  User Story 
+As a trader prone to emotional reactions, I want to receive real-time, context-aware warnings when 
+my trading behavior matches patterns associated with emotional or undisciplined trading, so that I 
+can pause, reconsider, and protect my capital. 
+ 
+6.2.2  Behavioral Rules Engine — Rule Definitions 
+The following rules constitute the MVP ruleset. Each rule is evaluated after every data sync cycle. 
+ 
+Rule ID Behavior Pattern Trigger Condition Alert Message 
+RQ-001 Revenge Trading Loss > 5% equity 
+AND new position 
+opened within 10 
+mins with leverage >= 
+15x 
+WARNING: Revenge 
+Trading Detected. You 
+opened a high-leverage 
+position shortly after a 
+significant loss. Consider 
+stepping away. 
+RQ-002 Overtrading > 10 trades opened 
+within a 60-minute 
+window 
+NOTICE: Overtrading 
+Pattern Detected. High-
+frequency position opening 
+may indicate emotional 
+trading. Review your trade 
+log. 
+RQ-003 Excessive Leverage Any single position 
+opened with leverage 
+> 50x 
+HIGH RISK: Extreme 
+Leverage Detected. A 
+position using 50x or higher 
+leverage creates severe 
+liquidation risk. 
+RQ-004 Max Drawdown Breach Portfolio drawdown 
+from peak exceeds 
+20% 
+ALERT: Maximum 
+Drawdown Threshold 
+Breached. Your portfolio has 
+declined 20% from its recent 
+peak. Review position 
+sizing. 
+RQ-005 Concentration Risk Single asset 
+constitutes > 60% of 
+total portfolio value 
+RISK: High Portfolio 
+Concentration. Over 60% of 
+your portfolio is in a single 
+asset. Consider rebalancing. 
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 12  |  Confidential & Proprietary 
+ 
+6.2.3  Calculated Metrics 
+• Max Drawdown: Calculated as ((Peak Portfolio Value - Trough Portfolio Value) / Peak 
+Portfolio Value) * 100, computed across the full available historical trade window. 
+• Trading Discipline Score (TDS): A composite score (0–100) derived from the inverse 
+frequency of triggered behavioral rule violations, normalized by trading volume. A score of 
+100 indicates zero behavioral violations. Score components are: Leverage Control (30%), 
+Drawdown Management (30%), Trade Frequency Discipline (20%), Loss Recovery Behavior 
+(20%). 
+• Win Rate: (Number of profitable closed trades / Total closed trades) * 100. 
+• Average Leverage: Mean leverage across all closed Futures positions in the trailing 30-day 
+window. 
+ 
+6.2.4  Alert Delivery Requirements 
+• Alerts shall be delivered as dynamic overlay pop-up cards in the bottom-right of the 
+dashboard, persisting until acknowledged by the user. 
+• Each alert card shall display: severity icon (color-coded: red = high, orange = medium, 
+yellow = info), alert title, detailed description message, triggered timestamp, and an action 
+button (Acknowledge / View Details). 
+• Acknowledged alerts are archived in a persistent Alert History panel accessible from the 
+dashboard sidebar. 
+• Alerts shall be delivered via WebSocket push; no polling mechanism shall be used for alert 
+delivery. 
+ 
+6.2.5  MVP Acceptance Criteria 
+6. The Quant Engine correctly detects a simulated Revenge Trading event (RQ-001) and 
+delivers the corresponding alert to the frontend WebSocket within 5 seconds of the trigger 
+event. 
+7. The Trading Discipline Score renders correctly on the dashboard and updates after each 
+data sync cycle. 
+8. Max Drawdown is calculated correctly for a test dataset and matches a pre-verified expected 
+output (within 0.01% tolerance). 
+9. Alert cards render correctly, persist until acknowledged, and are archived in the Alert History 
+panel upon acknowledgement. 
+10. All five MVP behavioral rules (RQ-001 through RQ-005) are implemented and unit-tested 
+with pass/fail test cases. 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 13  |  Confidential & Proprietary 
+6.3  Feature: Asset Contagion Graph 
+Priority: P1 — MVP Important 
+ 
+6.3.1  User Story 
+As a portfolio manager, I want to visually understand the correlations between my held assets so 
+that I can identify when my portfolio is effectively concentrated in a single risk factor and proactively 
+reduce cascading liquidation exposure. 
+ 
+6.3.2  Functional Specifications 
+• The Contagion Graph shall be rendered using React Flow as an interactive, zoomable, and 
+pannable network visualization embedded on the main dashboard. 
+• Each asset in the user's portfolio shall be represented as a node. Node size shall be 
+proportional to the asset's weight as a percentage of total portfolio value. 
+• Edges between nodes shall represent pairwise Pearson correlation coefficients calculated 
+from 30-day rolling daily returns. Edge thickness shall be proportional to correlation 
+magnitude (|r|). Edges with |r| < 0.3 shall not be displayed to reduce visual noise. 
+• Node and edge color coding: Correlation >= 0.7 (high): Red edge; Correlation 0.4–0.69 
+(moderate): Orange edge; Correlation < 0.4 (low): Grey edge. If a node's asset drops more 
+than 5% in a single day, the node and all connected edges with |r| >= 0.5 shall pulse red to 
+indicate contagion risk. 
+• Hovering over any node shall display a tooltip showing: asset name, current value, portfolio 
+weight (%), and a list of the top 3 most correlated assets with their correlation coefficient 
+values. 
+• A Contagion Risk Score shall be calculated as the average correlation of the top-3 asset 
+pairs by portfolio weight. This scalar score (0–100) shall be displayed prominently above the 
+graph. 
+ 
+6.3.3  MVP Acceptance Criteria 
+11. The graph correctly renders nodes for all assets in a test portfolio with more than 3 holdings. 
+12. Node sizes are proportionally correct (verified by visual inspection against known portfolio 
+weights). 
+13. Correlation values are computed correctly against a pre-verified reference dataset (within 
+0.02 tolerance). 
+14. A simulated 6% single-day drop in BTC triggers the visual contagion pulse effect on all BTC-
+adjacent nodes with correlation >= 0.5. 
+15. The graph is interactive: zoom, pan, and hover tooltip all function correctly in Chromium-
+based browsers. 
+ 
+6.4  Feature: Web3 Immutable Trading Identity (SBT Minting) 
+Priority: P1 — MVP Important 
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 14  |  Confidential & Proprietary 
+ 
+6.4.1  User Story 
+As a signal provider, I want to mint a Soulbound Token that permanently encodes my verified 
+trading discipline metrics on the blockchain so that potential copy-trade followers can independently 
+verify my performance history without relying on screenshots or self-reported data. 
+ 
+6.4.2  Smart Contract Specifications 
+• Contract Name: RiskHubSBT 
+• Standard: ERC-5114 (Soulbound) with ERC-721 view interface for compatibility with 
+explorers 
+• Network (MVP): BNB Chain Testnet; Production-ready: BNB Chain Mainnet and Ethereum 
+Mainnet 
+• Token Transferability: MUST be non-transferable. The transfer function SHALL revert with 
+error SBTNotTransferable() on any transfer attempt. 
+• Minting Restriction: Each wallet address is permitted exactly one SBT (one-per-wallet 
+enforcement). Existing SBTs may be updated (not replaced) by re-calling the mint/update 
+function with a fresh Oracle-signed payload. 
+• Oracle Verification: The contract SHALL verify that the data payload is signed by the 
+canonical RiskHub Oracle address. Minting with an invalid or unauthorized signature SHALL 
+revert. 
+ 
+6.4.3  On-Chain Data Payload 
+Field Type Description 
+walletAddress address The holder's Ethereum-compatible wallet address 
+maxDrawdown uint16 Historical max drawdown in basis points (e.g., 1500 
+= 15.00%) 
+winRate uint16 Win rate in basis points (e.g., 5800 = 58.00%) 
+avgLeverage uint8 Average leverage multiplier across all Futures 
+positions 
+disciplineScore uint8 Trading Discipline Score (0–100) 
+totalTrades uint32 Cumulative number of closed trades at time of 
+minting 
+dataTimestamp uint64 Unix timestamp of data aggregation by the Oracle 
+oracleSignature bytes ECDSA signature by RiskHub Oracle over the 
+keccak256 hash of the above fields 
+ 
+6.4.4  Frontend Minting Flow 
+16. User navigates to the Risk ID / SBT panel on the dashboard. 
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 15  |  Confidential & Proprietary 
+17. System displays current calculated metrics (drawdown, win rate, discipline score) and an 
+estimated gas fee for the minting transaction. 
+18. User clicks Mint My Risk ID. The backend Oracle signs the payload and returns the 
+signature. 
+19. MetaMask (or compatible wallet via RainbowKit) presents the transaction confirmation dialog 
+to the user. 
+20. Upon on-chain confirmation, the dashboard updates to display the minted SBT with a 
+Verified badge, token ID, and block explorer link. 
+ 
+6.4.5  MVP Acceptance Criteria 
+21. The RiskHubSBT contract is deployed to BNB Chain Testnet and passes all unit tests 
+including: mint with valid Oracle signature succeeds; mint with invalid signature reverts; 
+transfer attempt reverts with SBTNotTransferable error; second mint from same wallet 
+correctly updates existing SBT metrics. 
+22. A user with >= 30 days of connected trade history can complete the full minting flow 
+(backend signing + wallet transaction) within the dashboard. 
+23. The minted SBT is queryable on BNB Chain Testnet block explorer with correctly populated 
+on-chain data fields. 
+24. The frontend displays the SBT verification badge and block explorer link upon successful 
+mint confirmation. 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 16  |  Confidential & Proprietary 
+7. UI/UX Requirements 
+7.1  Design Language 
+• Color Palette: Dark-mode primary. Background: #0F172A (deep navy). Surface: #1E293B. 
+Accent: #1A56DB (electric blue). Success: #10B981. Warning: #F59E0B. Danger: #EF4444. 
+• Typography: System-native sans-serif stack (Inter preferred). Financial metrics rendered in 
+monospace for alignment. 
+• All charts and graphs shall use TradingView Lightweight Charts (financial data) and React 
+Flow (network graph). No third-party chart libraries shall introduce unnecessary bundle size. 
+• The layout shall be fully responsive for desktop (min 1280px) and tablet (min 768px) 
+breakpoints. Mobile view is out of scope for MVP. 
+ 
+7.2  Core Dashboard Layout 
+• Top Navigation Bar: Logo, connected wallet address (truncated), global portfolio value 
+(large, prominent), last sync timestamp, and notification bell icon. 
+• Left Sidebar: Navigation links (Dashboard, Risk Analysis, SBT Identity, Alert History, 
+Settings). Exchange connection status badges per connected exchange. 
+• Main Content Area (3-column grid): 
+– Column 1 (narrow): Portfolio breakdown card — unified balance, per-exchange 
+breakdown, Discipline Score gauge. 
+– Column 2 (wide): Asset Contagion Graph, Contagion Risk Score. 
+– Column 3 (narrow): Open Positions list, Max Drawdown indicator, Recent Alerts panel. 
+• Alert Overlay: Dynamic, non-blocking alert cards in the bottom-right corner, with severity 
+color coding and dismiss controls. 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 17  |  Confidential & Proprietary 
+8. Non-Functional Requirements 
+Category Requirement Specification 
+Performance Dashboard Load Initial page load (First Contentful Paint) < 2.5s on 
+standard broadband. WebSocket data refresh latency P95 
+< 3s. 
+Performance Quant Engine Behavioral rule evaluation pipeline completes in < 500ms 
+per user per sync cycle. 
+Scalability Concurrent Users System shall support 1,000 concurrent authenticated 
+users with active WebSocket connections without 
+degradation. Horizontally scalable via stateless FastAPI 
+workers. 
+Reliability Uptime 99.5% monthly uptime SLA for all production services. 
+Exchange API failures shall be handled gracefully with 
+retry logic (exponential backoff, 3 retries). 
+Security Data Encryption All API keys encrypted at rest (AES-256). All data in 
+transit encrypted (TLS 1.3+). No sensitive credentials 
+logged. 
+Security Smart Contract Smart contract shall be audited by a third-party security 
+firm before Mainnet deployment. Testnet deployment 
+requires internal security review. 
+Maintainability Code Quality Backend test coverage >= 80% (unit + integration). 
+Frontend component test coverage >= 60%. CI/CD 
+pipeline required for all merges to main. 
+Compliance Data Privacy User trade data shall not be shared with or sold to third 
+parties. Privacy policy must clearly disclose data retention 
+and deletion rights. 
+Observability Monitoring Application-level metrics (latency, error rate, alert trigger 
+rate) shall be exposed via a Prometheus-compatible 
+metrics endpoint. Structured JSON logging required on all 
+backend services. 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 18  |  Confidential & Proprietary 
+9. MVP Scope Definition 
+9.1  In Scope for MVP 
+IN SCOPE OUT OF SCOPE (Post-MVP) 
+• Binance + OKX read-only API integration 
+• Unified portfolio dashboard (dark mode) 
+• 5 behavioral alert rules (RQ-001 to RQ-
+005) 
+• Trading Discipline Score calculation 
+• Asset Contagion Graph (React Flow) 
+• Max Drawdown & Win Rate metrics 
+• SBT minting on BNB Chain Testnet 
+• MetaMask wallet connection (RainbowKit) 
+• Alert history panel & acknowledgement 
+flow 
+• JWT-based user authentication 
+• Mobile application (iOS / Android) 
+• ML-based behavioral prediction models 
+• Third-party copy-trade platform API 
+integration 
+• Mainnet SBT deployment 
+• Social sharing / SBT public profile page 
+• Decentralized exchange (DEX) data 
+integration 
+• In-app notifications (email, push) 
+• Team / multi-user accounts 
+• Fiat on/off ramp integration 
+• Customizable alert rule builder (user-
+defined rules) 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 19  |  Confidential & Proprietary 
+10. Delivery Plan & Sprint Milestones 
+The MVP is scoped for a 16-week delivery cycle across four two-sprint phases (2-week sprints). 
+ 
+Phase Weeks Deliverables Exit Criteria 
+Phase 1: 
+Foundation 
+1–4 Backend scaffolding (FastAPI), 
+MongoDB schema design, CCXT 
+integration for Binance, user 
+authentication (JWT), frontend Next.js 
+scaffold, Tailwind design system 
+Binance read-only data 
+successfully fetched 
+and stored. User login 
+flow working end-to-
+end. 
+Phase 2: 
+Core 
+Dashboard 
+5–8 OKX integration, unified portfolio 
+dashboard UI, WebSocket real-time 
+updates, Contagion Graph (React 
+Flow) with correlation calculation, 
+exchange connection management UI 
+Dashboard displays live 
+data from both 
+exchanges. Contagion 
+graph renders with 
+correct correlation-
+based edge weights. 
+Phase 3: 
+Quant 
+Engine 
+9–12 Full Behavioral Rules Engine (RQ-001 
+to RQ-005), Discipline Score 
+calculation, Max Drawdown engine, 
+WebSocket alert push, Alert History 
+panel, alert card UI component 
+All 5 behavioral rules 
+trigger correctly in 
+integration tests. Alerts 
+delivered via 
+WebSocket within 5s of 
+trigger. 
+Phase 4: 
+Web3 & 
+Launch 
+13–16 Solidity smart contract development + 
+testing, Oracle signing service 
+(Web3.py), RainbowKit wallet 
+integration, SBT minting UI flow, BNB 
+Chain Testnet deployment, end-to-end 
+QA, security review, soft launch 
+preparation 
+SBT minting completes 
+successfully on Testnet. 
+All MVP acceptance 
+criteria passed. No 
+critical security findings. 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 20  |  Confidential & Proprietary 
+11. Risks, Assumptions & Dependencies 
+11.1  Key Risks 
+Risk Severity Mitigation 
+Exchange API rate limits 
+impacting real-time data 
+freshness 
+Medium Implement request queuing with rate-limit-aware CCXT 
+configuration; use Redis caching to serve stale-but-
+recent data during rate limit windows 
+User distrust of providing 
+API keys to a third-party 
+platform 
+High Prominent security messaging; open-source the CCXT 
+integration layer; consider an optional local-only mode 
+for ultra-paranoid users in Post-MVP 
+Smart contract vulnerability 
+leading to reputation 
+damage pre-Mainnet 
+High Mandatory third-party audit before Mainnet. Testnet 
+deployment with limited user group for extended soak 
+testing 
+Behavioral alert false 
+positives eroding user trust 
+Medium Conservative threshold calibration for MVP. User 
+feedback mechanism on each alert (Was this helpful?). 
+Iterative threshold refinement post-launch 
+Regulatory classification of 
+SBT as a financial 
+instrument 
+Low-Med Legal review of SBT as an informational credential (not 
+a security); ensure no token carries monetary value or 
+ownership rights 
+ 
+11.2  Assumptions 
+• Exchange APIs (Binance, OKX) remain stable and do not introduce breaking changes to 
+their read-only API schema during the MVP build cycle. 
+• BNB Chain Testnet remains operational and publicly accessible throughout the development 
+and testing phases. 
+• Users possess basic familiarity with MetaMask or equivalent EVM-compatible browser 
+wallets for SBT minting. 
+• The product team has access to test accounts on both Binance and OKX with documented 
+trade history for integration testing. 
+ 
+11.3  External Dependencies 
+Dependency Owner Impact if Unavailable 
+CCXT Library Open Source (MIT) Core data ingestion blocked; would require 
+proprietary exchange integration work 
+Binance / OKX APIs Binance / OKX Affected exchange's data unavailable; dashboard 
+falls back to last-known data with error badge 
+BNB Chain Testnet 
+RPC 
+BNB Chain 
+Foundation 
+SBT minting testing blocked; switch to Ethereum 
+Sepolia as fallback 
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 21  |  Confidential & Proprietary 
+TradingView 
+Lightweight Charts 
+TradingView (Open 
+Source) 
+Financial chart visualizations degraded; fallback to 
+recharts 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 22  |  Confidential & Proprietary 
+12. Open Questions & Decisions Required 
+# Open Question Owner Target Resolution 
+1 Should users be required to connect a wallet 
+address before accessing the dashboard, or 
+can they use the platform without Web3 
+features? 
+Product + 
+Engineering 
+Sprint 2 
+2 What is the precise AES-256 key management 
+strategy for API key encryption in the MVP 
+environment (KMS vs. environment secrets)? 
+Engineering + 
+Security 
+Sprint 1 
+3 Should behavioral alert thresholds (e.g., the 
+5% loss threshold for RQ-001) be user-
+configurable in MVP, or fixed globally? 
+Product Sprint 3 
+4 Will the SBT token metadata (IPFS vs. on-
+chain) be stored fully on-chain for MVP, or will 
+non-critical fields be offloaded to IPFS? 
+Engineering + 
+Blockchain 
+Sprint 4 
+5 What is the legal entity structure for operating 
+the Oracle signing service, and does it create 
+any custodial or financial service obligations 
+under applicable regulations? 
+Legal Pre-Launch 
+  
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 23  |  Confidential & Proprietary 
+13. Glossary of Terms 
+Term Definition 
+CCXT CryptoCurrency eXchange Trading Library. An open-source library 
+providing a unified API interface to 100+ cryptocurrency exchanges. 
+SBT (Soulbound 
+Token) 
+A non-transferable, non-tradeable blockchain token permanently bound to a 
+specific wallet address, representing verifiable credentials or identity 
+attributes. 
+Max Drawdown The maximum observed percentage decline in portfolio value from a 
+historical peak to a subsequent trough, before a new peak is achieved. 
+Revenge Trading The behavioral pattern where a trader immediately re-enters the market 
+with increased leverage or position size following a significant loss, driven 
+by the emotional desire to recover losses quickly. 
+Oracle In the Web3 context, a trusted off-chain service that fetches real-world data, 
+signs it cryptographically, and delivers it to a smart contract in a verifiable 
+format. 
+Contagion Risk The risk that a decline in one asset triggers correlated declines in other held 
+assets due to high cross-asset correlation, amplifying total portfolio losses 
+beyond what any single position would suggest. 
+Trading Discipline 
+Score (TDS) 
+A proprietary composite metric (0–100) calculated by RiskHub's Quant 
+Engine reflecting the consistency of a trader's adherence to risk 
+management best practices over time. 
+ERC-5114 An Ethereum Improvement Proposal standard defining the interface for 
+Soulbound tokens — non-transferable NFTs bound to a specific EOA or 
+smart contract wallet. 
+P95 Latency The 95th percentile response time. 95% of all requests are completed 
+within this time threshold. A standard metric for measuring system 
+performance under real-world load. 
+Read-Only API Key An exchange API credential with permissions restricted exclusively to 
+reading account data (balances, positions, trade history). Cannot execute 
+trades, place orders, or trigger withdrawals. 
+ 
+ 
+14. Approval & Sign-Off 
+This document requires review and approval from all listed stakeholders prior to development 
+commencement. Approved signatures constitute authorization to proceed with the MVP scope as 
+defined herein. 
+ 
+Name & Title Role Signature Date 
+
+RiskHub | Product Requirements Document  |  CONFIDENTIAL 
+RiskHub PRD v1.0  |  Page 24  |  Confidential & Proprietary 
+ 
+Product Lead 
+  
+ 
+Engineering Lead 
+  
+ 
+Blockchain Lead 
+  
+ 
+Design Lead 
+  
+ 
+Legal Counsel 
+  
+ 
