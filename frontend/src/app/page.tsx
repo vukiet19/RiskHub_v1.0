@@ -1,9 +1,9 @@
-import { Sidebar } from "@/components/Sidebar";
-import { Navbar } from "@/components/Navbar";
-import { PortfolioCard } from "@/components/PortfolioCard";
-import { ContagionGraph } from "@/components/ContagionGraph";
-import { AlertsPanel } from "@/components/AlertsPanel";
-import { OpenPositions } from "@/components/OpenPositions";
+import { Sidebar } from "../components/Sidebar";
+import { Navbar } from "../components/Navbar";
+import { PortfolioCard } from "../components/PortfolioCard";
+import { ContagionGraph } from "../components/ContagionGraph";
+import { AlertsPanel } from "../components/AlertsPanel";
+import { OpenPositions } from "../components/OpenPositions";
 
 export default function Dashboard() {
   return (
