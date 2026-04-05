@@ -48,7 +48,7 @@ MAX_DRAWDOWN_BREACH_PCT = Decimal("20")         # portfolio dd > 20 %
 
 CONCENTRATION_RISK_PCT = Decimal("60")          # single asset > 60 %
 
-RATE_LIMIT_WINDOW_MINUTES = 30                  # alert cooldown
+RATE_LIMIT_WINDOW_MINUTES = 0                   # DISBABLED for hackathon testing (usually 30)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -883,7 +883,10 @@ async def run_quant_engine(user_id: str | ObjectId) -> dict[str, Any]:
     and persistence IDs.
     """
     if isinstance(user_id, str):
-        user_id = ObjectId(user_id)
+        try:
+            user_id = ObjectId(user_id)
+        except Exception as e:
+            raise ValueError(f"Invalid user_id format: {str(e)}") from e
 
     start = time.monotonic()
     logger.info("Quant Engine started for user %s", user_id)

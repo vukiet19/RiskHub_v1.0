@@ -70,14 +70,16 @@ def _create_exchange_client(
     cls = SUPPORTED_EXCHANGES[exchange_id]
 
     config: dict[str, Any] = {
-        "apiKey": api_key,
-        "secret": api_secret,
         "enableRateLimit": True,        # respect exchange rate limits
         "options": {
             "defaultType": "future",    # fetch futures by default
             "adjustForTimeDifference": True,
         },
     }
+    
+    if api_key and api_secret:
+        config["apiKey"] = api_key
+        config["secret"] = api_secret
 
     # OKX requires a passphrase
     if passphrase:
@@ -504,3 +506,36 @@ async def fetch_spot_balances(
         }
     finally:
         await exchange.close()
+
+
+# ─── Fetch OHLCV data for Correlation ────────────────────────────────────
+
+async def fetch_daily_ohlcv(
+    exchange_id: str,
+    symbols: list[str],
+    days: int = 30,
+) -> dict[str, list[list[float]]]:
+    """
+    Fetch daily OHLCV data for a list of symbols for the past `days`.
+    Uses unauthenticated API limits.
+    Returns dict mapping symbol to CCXT OHLCV list.
+    """
+    exchange = _create_exchange_client(exchange_id, "", "")
+    since = int((datetime.now(tz=timezone.utc).timestamp() - days * 86400) * 1000)
+    
+    results = {}
+    try:
+        exchange.options["defaultType"] = "spot" # OHLCV generally easier on spot
+        await exchange.load_markets()
+        for sym in symbols:
+            try:
+                # CCXT unified symbol (e.g., BTC/USDT)
+                ccxt_sym = sym if "/" in sym else f"{sym}/USDT" 
+                ohlcv = await exchange.fetch_ohlcv(ccxt_sym, '1d', since)
+                results[sym] = ohlcv
+            except Exception as e:
+                logger.warning("Failed to fetch OHLCV for %s: %s", sym, e)
+    finally:
+        await exchange.close()
+
+    return results

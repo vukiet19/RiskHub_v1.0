@@ -34,6 +34,15 @@ async def trigger_engine(user_id: str):
 
     Returns a JSON summary of all computed metrics and triggered rules.
     """
+    from bson import ObjectId
+    try:
+        ObjectId(user_id)
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid user_id format: '{user_id}' is not a valid MongoDB ObjectId"
+        )
+
     try:
         result = await run_quant_engine(user_id)
         return result

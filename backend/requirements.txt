@@ -1,29 +1,23 @@
 # ── Web Framework ────────────────────────────
 fastapi
-uvicorn[standard]
+uvicorn
 
 # ── Database ─────────────────────────────────
 motor
-pymongo[srv]
 
 # ── Data Validation & Serialisation ──────────
-pydantic[email]
+pydantic
 pydantic-core
-
-# ── Real-time ────────────────────────────────
-websockets
-redis
+email-validator
 
 # ── Exchange Data Ingestion ──────────────────
 ccxt
 
-# ── Task Queue ───────────────────────────────
-celery
+# ── Real-time ────────────────────────────────
+websockets
 
-# ── Security ─────────────────────────────────
-pycryptodome
-python-jose[cryptography]
-passlib[bcrypt]
+# ── Quant & Analytics ─────────────────────────
+pandas
 
 # ── Configuration ────────────────────────────
 python-dotenv
