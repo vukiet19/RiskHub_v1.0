@@ -40,6 +40,13 @@ from models.base import to_mongo_decimal
 
 logger = logging.getLogger("riskhub.exchange")
 
+# ── Symbols to scan if 'None' fails (Binance Futures Limitation) ──────
+COMMON_SYMBOLS = [
+    "BTC/USDT:USDT", "ETH/USDT:USDT", "SOL/USDT:USDT", 
+    "BNB/USDT:USDT", "XRP/USDT:USDT"
+]
+
+
 # ── Supported exchanges (MVP) ───────────────────────────────────────────
 SUPPORTED_EXCHANGES: dict[str, type] = {
     "binance": ccxt.binance,
@@ -54,6 +61,7 @@ def _create_exchange_client(
     api_key: str,
     api_secret: str,
     passphrase: Optional[str] = None,
+    testnet: bool = False,
 ) -> ccxt.Exchange:
     """
     Instantiate a CCXT async exchange client in **read-only** mode.
@@ -74,6 +82,8 @@ def _create_exchange_client(
         "options": {
             "defaultType": "future",    # fetch futures by default
             "adjustForTimeDifference": True,
+            "disableFuturesSandboxWarning": True,  # Bypass CCXT hard-block on deprecated testnet
+            "portfolio": testnet,                  # Support newer Binance Demo accounts
         },
     }
     
@@ -85,7 +95,12 @@ def _create_exchange_client(
     if passphrase:
         config["password"] = passphrase
 
-    return cls(config)
+    exchange = cls(config)
+    if testnet:
+        exchange.set_sandbox_mode(True)
+        logger.info("%s client created in SANDBOX/TESTNET mode", exchange_id)
+
+    return exchange
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────
@@ -265,6 +280,7 @@ async def fetch_and_sync_trades(
     api_key: str,
     api_secret: str,
     passphrase: Optional[str] = None,
+    testnet: bool = False,
     since_ms: Optional[int] = None,
     limit: int = 500,
 ) -> dict[str, Any]:
@@ -296,7 +312,7 @@ async def fetch_and_sync_trades(
     if isinstance(user_id, str):
         user_id = ObjectId(user_id)
 
-    exchange = _create_exchange_client(exchange_id, api_key, api_secret, passphrase)
+    exchange = _create_exchange_client(exchange_id, api_key, api_secret, passphrase, testnet)
 
     if since_ms is None:
         since_ms = int((datetime.now(tz=timezone.utc).timestamp() - 30 * 86400) * 1000)
@@ -315,19 +331,45 @@ async def fetch_and_sync_trades(
             trades = await exchange.fetch_my_trades(
                 symbol=None, since=since_ms, limit=limit
             )
-            raw_trades.extend(trades)
-        except ccxt.NotSupported:
+            if isinstance(trades, list):
+                raw_trades.extend(trades)
+        except Exception as e:
             logger.warning(
-                "%s: fetchMyTrades not supported, falling back to fetchClosedOrders",
-                exchange_id,
+                "%s: fetchMyTrades(None) failed (%s), starting Dynamic Symbol Discovery",
+                exchange_id, type(e).__name__
             )
+            # ── DYNAMIC DISCOVERY: Find symbols the user actually uses ───
+            symbols_to_scan = set(COMMON_SYMBOLS)
             try:
-                orders = await exchange.fetch_closed_orders(
-                    symbol=None, since=since_ms, limit=limit
-                )
-                raw_trades.extend(orders)
-            except ccxt.NotSupported:
-                logger.error("%s: neither fetchMyTrades nor fetchClosedOrders supported", exchange_id)
+                # 1. Check current positions for active symbols
+                positions = await exchange.fetch_positions()
+                for pos in positions:
+                    if float(pos.get('contracts', 0)) != 0 or float(pos.get('unrealizedPnl', 0)) != 0:
+                        symbols_to_scan.add(pos['symbol'])
+                
+                # 2. Check balance for assets with non-zero values
+                bal = await exchange.fetch_balance()
+                for asset, data in bal.get('total', {}).items():
+                    if float(data) > 0 and asset != 'USDT':
+                        # Attempt to guess the USDT unified derivative pair
+                        symbols_to_scan.add(f"{asset}/USDT:USDT")
+            except Exception as disc_e:
+                logger.debug("Symbol discovery limited: %s", disc_e)
+
+            logger.info("%s: Scanning discovered symbols: %s", exchange_id, list(symbols_to_scan))
+            
+            for sym in symbols_to_scan:
+                try:
+                    trades = await exchange.fetch_my_trades(
+                        symbol=sym, since=since_ms, limit=limit
+                    )
+                    if isinstance(trades, list) and len(trades) > 0:
+                        logger.info("Sync found %d trades for %s", len(trades), sym)
+                        raw_trades.extend(trades)
+                except Exception as sym_e:
+                    logger.debug("Sync skipped %s: %s", sym, sym_e)
+
+
 
         # ── Also try Spot trades ─────────────────────────────────────
         try:
@@ -347,6 +389,8 @@ async def fetch_and_sync_trades(
         # ── Map to documents & build bulkWrite ops ───────────────────
         ops: list[UpdateOne] = []
         for raw in raw_trades:
+            if not raw or not isinstance(raw, dict):
+                continue
             try:
                 # Determine account type from the raw response
                 market_type = raw.get("type", "") or ""
@@ -420,6 +464,7 @@ async def fetch_open_positions(
     api_key: str,
     api_secret: str,
     passphrase: Optional[str] = None,
+    testnet: bool = False,
 ) -> list[dict[str, Any]]:
     """
     Fetch currently open Futures positions from the exchange.
@@ -428,7 +473,7 @@ async def fetch_open_positions(
     the dashboard without persisting to MongoDB (positions are
     ephemeral; only closed trades are stored).
     """
-    exchange = _create_exchange_client(exchange_id, api_key, api_secret, passphrase)
+    exchange = _create_exchange_client(exchange_id, api_key, api_secret, passphrase, testnet)
     positions: list[dict[str, Any]] = []
 
     try:
@@ -476,12 +521,13 @@ async def fetch_spot_balances(
     api_key: str,
     api_secret: str,
     passphrase: Optional[str] = None,
+    testnet: bool = False,
 ) -> dict[str, Any]:
     """
     Fetch Spot account balances.  Returns a dict with ``total_usd``,
     ``assets`` (list), and ``raw`` for the full CCXT response.
     """
-    exchange = _create_exchange_client(exchange_id, api_key, api_secret, passphrase)
+    exchange = _create_exchange_client(exchange_id, api_key, api_secret, passphrase, testnet)
 
     try:
         exchange.options["defaultType"] = "spot"

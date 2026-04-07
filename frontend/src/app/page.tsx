@@ -17,7 +17,9 @@ export default function Dashboard() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [metrics, setMetrics] = useState<any>(null);
   const [alerts, setAlerts] = useState<AlertData[]>([]);
+  const [positions, setPositions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isPositionsLoading, setIsPositionsLoading] = useState(true);
 
   // Fallback to "F" grade if undefined
   const disciplineScore = metrics?.discipline_score?.total ?? 0;
@@ -61,7 +63,33 @@ export default function Dashboard() {
         setIsLoading(false);
       }
     }
+    
+    async function fetchLivePositions() {
+      try {
+        const res = await fetch(`http://localhost:8000/api/v1/sync/positions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            exchange_id: 'binance',
+            api_key: 'p78rg4piSpNNlRNZV9973wJZ9g5hqIuEw9LwsJUpTV7TkgnyLBIK8Ca2jMjGSg2b',
+            api_secret: 'iRACN88DEMG4EE44h8cFy9WiniluQ1UuhammAG8DM7t9J9ZA1y4YiDXcNpRn8Kjg',
+            testnet: true
+          })
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          setPositions(data.positions || []);
+        }
+      } catch (err) {
+        console.error("Failed to fetch positions:", err);
+      } finally {
+        setIsPositionsLoading(false);
+      }
+    }
+
     fetchDashboard();
+    fetchLivePositions();
   }, []);
 
   // Set up WebSocket for real-time alert updates
@@ -153,7 +181,7 @@ export default function Dashboard() {
 
             {/* Column 3 (narrow) */}
             <div className="lg:col-span-3 flex flex-col gap-6">
-              <OpenPositions />
+              <OpenPositions positions={positions} isLoading={isPositionsLoading} />
               <AlertsPanel alerts={alerts} />
               <div className="glass-card rounded-2xl p-5 hover:border-danger/30 transition-colors duration-300">
                  <h3 className="text-base font-semibold mb-3 text-white">Drawdown Impact</h3>

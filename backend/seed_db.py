@@ -15,8 +15,8 @@ async def seed():
         "email": "kiet@riskhub.com",
         "password_hash": "dummy_hash",
         "username": "Kiet",
-        "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
         "is_active": True,
         "email_verified": True,
         "preferences": {
@@ -30,9 +30,10 @@ async def seed():
     print("User seeded.")
     
     # 2. Create Mock Risk Metrics
+    await db.risk_metrics.delete_many({"user_id": dummy_id})
     metrics = {
         "user_id": dummy_id,
-        "calculated_at": datetime.utcnow(),
+        "calculated_at": datetime.now(timezone.utc),
         "net_pnl_usd": Decimal128("1250.45"),
         "discipline_score": {
             "total": 85,
@@ -56,13 +57,17 @@ async def seed():
         "by_exchange": [
             {
                 "exchange_id": "binance",
-                "balance_usd": Decimal128("5000"),
-                "pnl_usd": Decimal128("750")
+                "trade_count": 28,
+                "win_rate_pct": "64.2",
+                "avg_leverage": "12.5",
+                "net_pnl_usd": Decimal128("750.45")
             },
             {
                 "exchange_id": "okx",
-                "balance_usd": Decimal128("3000"),
-                "pnl_usd": Decimal128("500")
+                "trade_count": 15,
+                "win_rate_pct": "58.0",
+                "avg_leverage": "5.0",
+                "net_pnl_usd": Decimal128("500.00")
             }
         ],
         "sbt_ready": True
@@ -71,6 +76,7 @@ async def seed():
     print("Metrics seeded.")
     
     # 3. Create Mock Alerts
+    await db.alerts_log.delete_many({"user_id": dummy_id})
     alerts = [
         {
             "user_id": dummy_id,
@@ -96,7 +102,8 @@ async def seed():
     await db.alerts_log.insert_many(alerts)
     print("Alerts seeded.")
 
-    # 4. Create Mock Trades (to trigger rules during Execute)
+    # 4. Create Mock Trades
+    await db.trade_history.delete_many({"user_id": dummy_id})
     now = datetime.now(timezone.utc)
     trades = [
         {

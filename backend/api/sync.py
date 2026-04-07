@@ -42,6 +42,7 @@ class SyncTradesRequest(BaseModel):
     passphrase: Optional[str] = Field(
         None, description="Exchange passphrase (required for OKX)"
     )
+    testnet: bool = Field(False, description="Whether to use the exchange testnet/sandbox")
     since_ms: Optional[int] = Field(
         None,
         description=(
@@ -66,6 +67,7 @@ class PositionsRequest(BaseModel):
     api_key: str
     api_secret: str
     passphrase: Optional[str] = None
+    testnet: bool = False
 
 
 class BalancesRequest(BaseModel):
@@ -74,6 +76,7 @@ class BalancesRequest(BaseModel):
     api_key: str
     api_secret: str
     passphrase: Optional[str] = None
+    testnet: bool = False
 
 
 # ── Endpoints ────────────────────────────────────────────────────────────
@@ -94,6 +97,7 @@ async def sync_trades(req: SyncTradesRequest):
             api_key=req.api_key,
             api_secret=req.api_secret,
             passphrase=req.passphrase,
+            testnet=req.testnet,
             since_ms=req.since_ms,
         )
         return SyncTradesResponse(
@@ -125,6 +129,7 @@ async def get_positions(req: PositionsRequest):
             api_key=req.api_key,
             api_secret=req.api_secret,
             passphrase=req.passphrase,
+            testnet=req.testnet,
         )
         return {"status": "ok", "positions": positions, "count": len(positions)}
     except ValueError as e:
@@ -147,6 +152,7 @@ async def get_balances(req: BalancesRequest):
             api_key=req.api_key,
             api_secret=req.api_secret,
             passphrase=req.passphrase,
+            testnet=req.testnet,
         )
         return {"status": "ok", **balances}
     except ValueError as e:
