@@ -2,7 +2,7 @@ import { LayoutDashboard, Activity, Fingerprint, History, Settings } from 'lucid
 
 export function Sidebar() {
   return (
-    <aside className="w-64 glass border-r bg-white/[0.02] border-white/5 flex flex-col hidden md:flex relative z-20">
+    <aside className="w-64 bg-surface-low flex flex-col hidden md:flex relative z-20">
       <div className="p-8 flex items-center gap-3">
         <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-primary-dark flex items-center justify-center shadow-[0_0_15px_rgba(26,86,219,0.5)]">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v20"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -45,9 +45,9 @@ export function Sidebar() {
 
 function NavItem({ icon, label, active = false }: { icon: React.ReactNode; label: string; active?: boolean }) {
   return (
-    <a href="#" className={`flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${active ? 'bg-gradient-to-r from-primary/20 to-primary/5 text-primary font-medium border border-primary/20 shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)] relative' : 'text-gray-400 hover:text-white hover:bg-white/[0.05]'}`}>
-      {active && <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full bg-primary shadow-[0_0_10px_rgba(26,86,219,0.8)]"></div>}
-      <div className={`${active ? 'text-primary' : 'text-gray-500 group-hover:text-gray-300'} transition-colors`}>{icon}</div>
+    <a href="#" className={`flex items-center gap-3 px-4 py-3 transition-colors duration-300 group ${active ? 'text-text-primary font-medium relative' : 'text-text-secondary hover:text-text-primary'}`}>
+      {active && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary"></div>}
+      <div className={`${active ? 'text-primary' : 'text-text-secondary group-hover:text-text-primary'} transition-colors`}>{icon}</div>
       <span className="tracking-wide text-sm">{label}</span>
     </a>
   );

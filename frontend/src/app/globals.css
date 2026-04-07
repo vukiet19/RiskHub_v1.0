@@ -1,25 +1,33 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #1A56DB;
-  --color-primary-light: #2563EB;
-  --color-primary-dark: #1E40AF;
-  --color-background-start: #0F172A;
-  --color-background-end: #020617;
-  --color-surface: #1E293B;
-  --color-surface-hover: #334155;
-  --color-success: #10B981;
-  --color-warning: #F59E0B;
-  --color-danger: #EF4444;
+  --color-main-bg: #0b1326;
+  --color-surface-lowest: #060e20;
+  --color-surface-low: #131b2e;
+  --color-surface-high: #222a3d;
+  --color-surface-highest: #2d3449;
+  --color-text-primary: #dae2fd;
+  --color-text-secondary: #c3c5d7;
+  --color-primary: #1a56db;
+  --color-primary-light: #b5c4ff;
+  --color-success: #a8efb4;
+  --color-danger: #ffb4ab;
+  --color-danger-container: #93000a;
+  --color-warning: #ffb59a;
+  --color-warning-container: #ad3b00;
+  --color-node-bg: #31394d;
+  
   --font-sans: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Roboto Mono', monospace;
   
   --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
 body {
-  background: linear-gradient(to bottom right, var(--color-background-start), var(--color-background-end));
-  color: #F8FAFC;
+  background-color: var(--color-main-bg);
+  color: var(--color-text-primary);
   font-family: var(--font-sans);
   min-height: 100vh;
 }

@@ -2,12 +2,12 @@ import { Bell, Wallet } from 'lucide-react';
 
 export function Navbar() {
   return (
-    <header className="h-20 bg-black/20 border-b border-white/5 flex items-center justify-between px-8 backdrop-blur-xl sticky top-0 z-30">
+    <header className="h-20 bg-main-bg flex items-center justify-between px-8 sticky top-0 z-30">
       <div className="flex items-center gap-4">
-        <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400 block md:hidden tracking-wider">RiskHub</h2>
+        <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-text-primary to-text-secondary block md:hidden tracking-wider">RiskHub</h2>
         <div className="hidden md:flex flex-col">
-          <span className="text-white font-medium tracking-wide">Good evening, Alex</span>
-          <span className="text-xs text-gray-400 tracking-wider">Your portfolio is relatively stable today.</span>
+          <span className="text-text-primary font-medium tracking-wide">Good evening, Alex</span>
+          <span className="text-xs text-text-secondary tracking-wider">Your portfolio is relatively stable today.</span>
         </div>
       </div>
       

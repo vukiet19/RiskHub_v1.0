@@ -79,14 +79,20 @@ export default function Dashboard() {
   });
 
   return (
-    <div className="flex h-screen overflow-hidden bg-transparent">
-      <Toaster position="top-right" expand={false} theme="dark" />
+    <div className="flex h-screen overflow-hidden bg-main-bg">
+      <Toaster 
+        position="bottom-right" 
+        expand={false} 
+        theme="dark" 
+        toastOptions={{
+          className: 'bg-main-bg/70 backdrop-blur-xl border border-surface-highest text-text-primary rounded-md',
+          classNames: {
+            error: '!bg-danger-container !border-danger-container !text-danger-accent shadow-[0_48px_48px_rgba(105,0,5,0.4)] drop-shadow-lg',
+          }
+        }}
+      />
       <Sidebar />
       <div className="flex flex-col flex-1 overflow-hidden relative">
-        {/* Subtle background glow effect */}
-        <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary/20 rounded-full blur-[120px] -z-10 pointer-events-none"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-success/10 rounded-full blur-[100px] -z-10 pointer-events-none"></div>
-        
         <Navbar />
         <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 relative z-0">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
@@ -97,23 +103,22 @@ export default function Dashboard() {
                 totalUnrealizedPnl={netPnlUsd} 
               />
               {/* Discipline Score gauge */}
-              <div className="glass-card rounded-2xl p-6 relative overflow-hidden group hover:border-primary/30 transition-all duration-300">
-                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-3xl group-hover:bg-primary/20 transition-colors"></div>
-                <h3 className="text-lg font-semibold mb-6 text-white flex justify-between items-center">
+              <div className="bg-surface-high hover:bg-surface-highest rounded-md p-6 relative overflow-hidden transition-all duration-300">
+                <h3 className="text-lg font-semibold mb-6 text-text-primary flex justify-between items-center">
                   <span>Discipline Score</span>
-                  <span className="text-xs bg-white/10 px-2 py-1 rounded-md text-gray-300">Trailing 30d</span>
+                  <span className="text-xs bg-surface-lowest px-2 py-1 rounded-md text-text-secondary">Trailing 30d</span>
                 </h3>
                 <div className="flex items-center justify-center py-4">
                    <div className="relative w-36 h-36 rounded-full flex items-center justify-center">
                      {/* Outer animated ring */}
-                     <div className="absolute inset-0 rounded-full border-2 border-white/5 animate-[spin_10s_linear_infinite]"></div>
+                     <div className="absolute inset-0 rounded-full border-2 border-surface-highest"></div>
                      {/* Score ring */}
                      <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                        <circle cx="50" cy="50" r="45" className="stroke-white/10 stroke-[8px] fill-transparent" />
+                        <circle cx="50" cy="50" r="45" className="stroke-surface-highest stroke-[8px] fill-transparent" />
                         <circle cx="50" cy="50" r="45" className="stroke-primary stroke-[8px] fill-transparent" strokeDasharray="283" strokeDashoffset={`${283 - (283 * disciplineScore) / 100}`} strokeLinecap="round" />
                      </svg>
                      <div className="absolute flex flex-col items-center justify-center">
-                       <span className="text-4xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">{disciplineScore}</span>
+                       <span className="text-4xl font-bold font-mono tracking-tight text-text-primary">{disciplineScore}</span>
                        <span className="text-xs text-primary font-medium tracking-wide mt-1">GRADE: {disciplineGrade}</span>
                      </div>
                    </div>

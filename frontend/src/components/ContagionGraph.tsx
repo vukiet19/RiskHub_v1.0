@@ -6,14 +6,10 @@ import '@xyflow/react/dist/style.css';
 
 const DUMMY_USER_ID = "64f1a2b3c4d5e6f7a8b9c0d1";
 
-// Helper color assignments based on groups
-const GROUP_COLORS: Record<number, string> = {
-  1: '#f59e0b', // Amber
-  2: '#627eea', // Indigo/Blue
-  3: '#14f195', // Green
-  4: '#2a5ada', // Deep Blue
-  5: '#ec4899', // Pink
-};
+// Colors mapped to new theme inline
+const NODE_BG = '#31394d';
+const NODE_TEXT = '#dae2fd';
+const EDGE_DANGER = '#ffb4ab';
 
 export function ContagionGraph() {
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -44,7 +40,8 @@ export function ContagionGraph() {
             // Limit size visually between 40 and 100
             const size = Math.min(Math.max(40, (n.value / 1000) * 10), 100);
             
-            const bgColor = GROUP_COLORS[n.group % 5 + 1] || '#333';
+            // Consistent node background
+            const bgColor = NODE_BG;
 
             return {
               id: n.id,
@@ -57,8 +54,8 @@ export function ContagionGraph() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                background: bgColor,
-                color: '#fff',
+                background: NODE_BG,
+                color: NODE_TEXT,
                 border: 'none',
                 fontWeight: 'bold',
                 fontSize: size > 60 ? '14px' : '10px'
@@ -76,9 +73,10 @@ export function ContagionGraph() {
               target: e.target,
               animated: isHighContagion,
               style: {
-                stroke: isHighContagion ? '#ef4444' : (e.correlation < 0 ? '#10b981' : '#6b7280'),
+                stroke: isHighContagion ? EDGE_DANGER : (e.correlation < 0 ? '#10b981' : '#6b7280'),
                 strokeWidth: isHighContagion ? 3 : 1,
-                strokeDasharray: isHighContagion ? '5,5' : 'none'
+                strokeDasharray: isHighContagion ? '5,5' : 'none',
+                filter: isHighContagion ? `drop-shadow(0 0 4px ${EDGE_DANGER})` : 'none'
               }
             };
           });
@@ -96,7 +94,7 @@ export function ContagionGraph() {
   return (
     <div style={{ width: '100%', height: '100%' }}>
       <ReactFlow nodes={nodes} edges={edges} fitView>
-        <Background color="#1e293b" gap={16} />
+        <Background color="#131b2e" gap={16} />
         <Controls showInteractive={false} />
       </ReactFlow>
     </div>
