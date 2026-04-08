@@ -10,10 +10,24 @@ export interface PositionData {
 interface OpenPositionsProps {
   positions: PositionData[];
   isLoading?: boolean;
+  isConnected?: boolean;
+  sourceState?: "live" | "no_connection" | "no_open_positions" | "error";
+  statusMessage?: string | null;
 }
 
-export function OpenPositions({ positions = [], isLoading = false }: OpenPositionsProps) {
+export function OpenPositions({
+  positions = [],
+  isLoading = false,
+  isConnected = false,
+  sourceState = "live",
+  statusMessage = null,
+}: OpenPositionsProps) {
   const displayPositions = positions.length > 0 ? positions : [];
+  const emptyStateMessage = !isConnected
+    ? "Connect Binance Testnet to load live positions."
+    : sourceState === "error" && statusMessage
+      ? statusMessage
+      : statusMessage || "No open futures positions found.";
 
   return (
     <div className="glass-card flex-1 rounded-2xl p-6 shadow-xl border border-white/5 relative z-10 transition-all hover:border-white/10 group">
@@ -27,7 +41,7 @@ export function OpenPositions({ positions = [], isLoading = false }: OpenPositio
         {isLoading ? (
           <div className="text-gray-500 text-sm animate-pulse text-center py-10">Fetching live positions...</div>
         ) : displayPositions.length === 0 ? (
-          <div className="text-gray-500 text-sm text-center py-10 italic">No active positions found.</div>
+          <div className="text-gray-500 text-sm text-center py-10 italic">{emptyStateMessage}</div>
         ) : (
           displayPositions.map((pos, i) => {
             const pnlValue = parseFloat(pos.unrealized_pnl || '0');

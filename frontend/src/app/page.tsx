@@ -1,199 +1,507 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import dynamic from "next/dynamic";
+import { startTransition, useCallback, useEffect, useState } from "react";
+import { Toaster, toast } from "sonner";
 import { Sidebar } from "../components/Sidebar";
 import { Navbar } from "../components/Navbar";
 import { PortfolioCard } from "../components/PortfolioCard";
-import { ContagionGraph } from "../components/ContagionGraph";
 import { AlertsPanel, AlertData } from "../components/AlertsPanel";
-import { OpenPositions } from "../components/OpenPositions";
+import { PositionData, OpenPositions } from "../components/OpenPositions";
+import { ConnectBinanceTestnetModal } from "../components/ConnectBinanceTestnetModal";
 import { useRiskWebSocket } from "../hooks/useRiskWebSocket";
-import { Toaster } from "sonner";
+import { buildApiUrl, DEFAULT_USER_ID } from "../lib/riskhub-api";
 
-// Use a mock valid MongoDB ObjectId for MVP testing
-const DUMMY_USER_ID = "64f1a2b3c4d5e6f7a8b9c0d1";
+interface DashboardMetrics {
+  by_exchange?: {
+    exchange_id: string;
+    trade_count: number;
+    win_rate_pct: string;
+    avg_leverage: string;
+    net_pnl_usd: string;
+  }[];
+  discipline_score?: {
+    total?: number;
+    grade?: string;
+  };
+  max_drawdown?: {
+    value_pct?: string;
+  };
+  net_pnl_usd?: string;
+}
+
+interface DashboardOverview {
+  total_portfolio_value: number;
+  total_unrealized_pnl: number;
+  net_pnl_usd: number;
+  discipline_score: number;
+  discipline_grade: string;
+  max_drawdown_pct: number;
+  exchange_connections: {
+    exchange_id: string;
+    label: string;
+    environment: string;
+    market_type: string;
+    permissions_verified: string[];
+    is_active: boolean;
+    last_sync_at: string | null;
+    last_sync_status: string;
+    last_sync_error: string | null;
+    added_at: string | null;
+  }[];
+  last_refresh_at: string | null;
+  data_freshness: {
+    state: string;
+    live_account_snapshot_at: string | null;
+    metrics_calculated_at: string | null;
+  };
+  has_configured_exchange_connection?: boolean;
+  has_live_exchange_connection: boolean;
+  warnings?: string[];
+}
+
+interface DashboardRefreshResponse {
+  status: string;
+  warnings: string[];
+  engine_status: string;
+}
+
+type PositionsSourceState =
+  | "live"
+  | "no_connection"
+  | "no_open_positions"
+  | "error";
+
+interface LivePositionsResponse {
+  positions?: PositionData[];
+  source_state?: PositionsSourceState;
+  message?: string | null;
+}
+
+interface ApiAlert {
+  _id?: string;
+  rule_id: string;
+  rule_name: string;
+  severity: AlertData["severity"];
+  title: string;
+  message: string;
+  triggered_at: string;
+  is_read?: boolean;
+}
+
+const PortfolioContagionMap = dynamic(
+  () => import("../components/PortfolioContagionMap").then((mod) => mod.PortfolioContagionMap),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-sm text-gray-400">
+        Loading contagion map...
+      </div>
+    ),
+  }
+);
+
+async function readErrorMessage(response: Response): Promise<string> {
+  try {
+    const payload = await response.json();
+    if (typeof payload?.detail === "string") {
+      return payload.detail;
+    }
+  } catch {
+    // Ignore malformed error bodies and fall back to status text.
+  }
+
+  return response.statusText || `Request failed with status ${response.status}`;
+}
 
 export default function Dashboard() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [metrics, setMetrics] = useState<any>(null);
+  const userId = DEFAULT_USER_ID;
+
+  const [overview, setOverview] = useState<DashboardOverview | null>(null);
+  const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [alerts, setAlerts] = useState<AlertData[]>([]);
-  const [positions, setPositions] = useState<any[]>([]);
+  const [unreadAlertCount, setUnreadAlertCount] = useState(0);
+  const [positions, setPositions] = useState<PositionData[]>([]);
+  const [positionsSourceState, setPositionsSourceState] =
+    useState<PositionsSourceState>("live");
+  const [positionsStatusMessage, setPositionsStatusMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isPositionsLoading, setIsPositionsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const [contagionRefreshToken, setContagionRefreshToken] = useState(0);
 
-  // Fallback to "F" grade if undefined
-  const disciplineScore = metrics?.discipline_score?.total ?? 0;
-  const disciplineGrade = metrics?.discipline_score?.grade ?? "F";
-  const drawdownPct = metrics?.max_drawdown?.value_pct ?? "0.00";
-  const netPnlUsd = metrics?.net_pnl_usd ?? "0.00";
+  const loadDashboardData = useCallback(async (options?: { showSkeleton?: boolean }) => {
+    const showSkeleton = options?.showSkeleton ?? false;
 
-  // Initial Fetch Data
-  useEffect(() => {
-    async function fetchDashboard() {
-      try {
-        const [metricsRes, alertsRes] = await Promise.all([
-          fetch(`http://localhost:8000/api/v1/dashboard/${DUMMY_USER_ID}/metrics`),
-          fetch(`http://localhost:8000/api/v1/dashboard/${DUMMY_USER_ID}/alerts?unread_only=true`)
-        ]);
-
-        if (metricsRes.ok) {
-          const mData = await metricsRes.json();
-          setMetrics(mData.data);
-        }
-
-        if (alertsRes.ok) {
-          const aData = await alertsRes.json();
-          // Filter to just map what we need
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const formattedAlerts = aData.alerts.map((a: any) => ({
-            id: a._id || Math.random().toString(),
-            rule_id: a.rule_id,
-            rule_name: a.rule_name,
-            severity: a.severity,
-            title: a.title,
-            message: a.message,
-            triggered_at: a.triggered_at,
-            is_read: a.is_read
-          }));
-          setAlerts(formattedAlerts);
-        }
-      } catch (err) {
-        console.error("Dashboard data fetch error:", err);
-      } finally {
-        setIsLoading(false);
-      }
+    if (showSkeleton) {
+      setIsLoading(true);
+      setIsPositionsLoading(true);
     }
-    
-    async function fetchLivePositions() {
-      try {
-        const res = await fetch(`http://localhost:8000/api/v1/sync/positions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            exchange_id: 'binance',
-            api_key: 'p78rg4piSpNNlRNZV9973wJZ9g5hqIuEw9LwsJUpTV7TkgnyLBIK8Ca2jMjGSg2b',
-            api_secret: 'iRACN88DEMG4EE44h8cFy9WiniluQ1UuhammAG8DM7t9J9ZA1y4YiDXcNpRn8Kjg',
-            testnet: true
-          })
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
-          setPositions(data.positions || []);
-        }
-      } catch (err) {
-        console.error("Failed to fetch positions:", err);
-      } finally {
+
+    try {
+      const [overviewRes, metricsRes, alertsRes, positionsRes] = await Promise.all([
+        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/overview`), {
+          cache: "no-store",
+        }),
+        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/metrics`), {
+          cache: "no-store",
+        }),
+        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/alerts?unread_only=true`), {
+          cache: "no-store",
+        }),
+        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/positions`), {
+          cache: "no-store",
+        }),
+      ]);
+
+      if (!overviewRes.ok) {
+        throw new Error(await readErrorMessage(overviewRes));
+      }
+
+      const overviewPayload = (await overviewRes.json()) as DashboardOverview;
+
+      let metricsPayload: DashboardMetrics | null = null;
+      if (metricsRes.ok) {
+        const metricsJson = await metricsRes.json();
+        metricsPayload = metricsJson.data as DashboardMetrics;
+      } else if (metricsRes.status !== 404) {
+        console.error("Metrics fetch failed:", await readErrorMessage(metricsRes));
+      }
+
+      let alertsPayload: AlertData[] = [];
+      let nextUnreadAlertCount = 0;
+      if (alertsRes.ok) {
+        const alertsJson = await alertsRes.json();
+        alertsPayload = (alertsJson.alerts as ApiAlert[]).map((alert, index) => ({
+          id: alert._id || `${alert.rule_id}-${alert.triggered_at}-${index}`,
+          rule_id: alert.rule_id,
+          rule_name: alert.rule_name,
+          severity: alert.severity,
+          title: alert.title,
+          message: alert.message,
+          triggered_at: alert.triggered_at,
+          is_read: alert.is_read,
+        }));
+        nextUnreadAlertCount =
+          alertsJson.unread_total ??
+          alertsPayload.filter((alert) => !alert.is_read).length;
+      } else {
+        console.error("Alerts fetch failed:", await readErrorMessage(alertsRes));
+      }
+
+      let positionsPayload: PositionData[] = [];
+      let nextPositionsSourceState: PositionsSourceState = "live";
+      let nextPositionsStatusMessage: string | null = null;
+      if (positionsRes.ok) {
+        const positionsJson = (await positionsRes.json()) as LivePositionsResponse;
+        positionsPayload = Array.isArray(positionsJson.positions)
+          ? positionsJson.positions
+          : [];
+        nextPositionsSourceState = positionsJson.source_state ?? "live";
+        nextPositionsStatusMessage = positionsJson.message ?? null;
+      } else {
+        console.error("Positions fetch failed:", await readErrorMessage(positionsRes));
+      }
+
+      startTransition(() => {
+        setOverview(overviewPayload);
+        setMetrics(metricsPayload);
+        setAlerts(alertsPayload);
+        setUnreadAlertCount(nextUnreadAlertCount);
+        setPositions(positionsPayload);
+        setPositionsSourceState(nextPositionsSourceState);
+        setPositionsStatusMessage(nextPositionsStatusMessage);
+      });
+    } catch (error) {
+      console.error("Dashboard data fetch error:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to load dashboard data.");
+      startTransition(() => {
+        setOverview(null);
+        setMetrics(null);
+        setAlerts([]);
+        setUnreadAlertCount(0);
+        setPositions([]);
+        setPositionsSourceState("error");
+        setPositionsStatusMessage("Failed to load dashboard data.");
+      });
+    } finally {
+      if (showSkeleton) {
+        setIsLoading(false);
         setIsPositionsLoading(false);
       }
     }
+  }, [userId]);
 
-    fetchDashboard();
-    fetchLivePositions();
-  }, []);
+  useEffect(() => {
+    void loadDashboardData({ showSkeleton: true });
+  }, [loadDashboardData]);
 
-  // Set up WebSocket for real-time alert updates
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleNewAlert = useCallback((newAlert: any) => {
-    setAlerts((prev) => {
-      // Prepend the new alert, limit to 20 visually maybe, but just prepend for now
-      return [newAlert, ...prev];
-    });
+  const disciplineScore =
+    metrics?.discipline_score?.total ?? overview?.discipline_score ?? 0;
+  const disciplineGrade =
+    metrics?.discipline_score?.grade ?? overview?.discipline_grade ?? "N/A";
+  const drawdownPct =
+    metrics?.max_drawdown?.value_pct ?? `${overview?.max_drawdown_pct ?? 0}`;
+  const netPnlUsd = metrics?.net_pnl_usd ?? overview?.net_pnl_usd ?? 0;
+
+  const handleNewAlert = useCallback((newAlert: AlertData) => {
+    setAlerts((previousAlerts) => [newAlert, ...previousAlerts]);
+    setUnreadAlertCount((currentCount) => currentCount + 1);
   }, []);
 
   useRiskWebSocket({
-    userId: DUMMY_USER_ID,
-    onNewAlert: handleNewAlert
+    userId,
+    onNewAlert: handleNewAlert,
   });
+
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+
+    try {
+      const response = await fetch(buildApiUrl(`/api/v1/dashboard/${userId}/refresh`), {
+        method: "POST",
+      });
+
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      const payload = (await response.json()) as DashboardRefreshResponse;
+      if (payload.status === "partial" && payload.warnings.length > 0) {
+        toast.message("Dashboard refreshed with warnings.", {
+          description: payload.warnings[0],
+        });
+      } else {
+        toast.success("Dashboard refreshed.");
+      }
+
+      await loadDashboardData();
+      setContagionRefreshToken((currentToken) => currentToken + 1);
+    } catch (error) {
+      console.error("Dashboard refresh failed:", error);
+      toast.error(error instanceof Error ? error.message : "Dashboard refresh failed.");
+      await loadDashboardData();
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, [loadDashboardData, userId]);
+
+  const handleConnectSubmit = useCallback(async (payload: {
+    apiKey: string;
+    apiSecret: string;
+    label: string;
+  }) => {
+    setIsConnecting(true);
+    setConnectError(null);
+
+    try {
+      const connectResponse = await fetch(
+        buildApiUrl(`/api/v1/exchange-keys/${userId}/binance-testnet/connect`),
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            api_key: payload.apiKey,
+            api_secret: payload.apiSecret,
+            label: payload.label,
+          }),
+        }
+      );
+
+      if (!connectResponse.ok) {
+        throw new Error(await readErrorMessage(connectResponse));
+      }
+
+      setIsConnectModalOpen(false);
+      try {
+        const refreshResponse = await fetch(buildApiUrl(`/api/v1/dashboard/${userId}/refresh`), {
+          method: "POST",
+        });
+
+        if (!refreshResponse.ok) {
+          throw new Error(await readErrorMessage(refreshResponse));
+        }
+
+        const refreshPayload = (await refreshResponse.json()) as DashboardRefreshResponse;
+
+        toast.success(
+          refreshPayload.status === "partial"
+            ? "Binance Testnet connected. Data refreshed with warnings."
+            : "Binance Testnet connected."
+        );
+
+        if (refreshPayload.warnings.length > 0) {
+          toast.message("Refresh details", {
+            description: refreshPayload.warnings[0],
+          });
+        }
+      } catch (refreshError) {
+        console.error("Initial dashboard refresh failed after connect:", refreshError);
+        toast.message("Binance Testnet connected. Initial refresh needs attention.", {
+          description:
+            refreshError instanceof Error
+              ? refreshError.message
+              : "The connection was saved, but the first refresh failed.",
+        });
+      }
+
+      await loadDashboardData();
+      setContagionRefreshToken((currentToken) => currentToken + 1);
+    } catch (error) {
+      console.error("Binance Testnet connect failed:", error);
+      setConnectError(
+        error instanceof Error
+          ? error.message
+          : "Failed to connect Binance Testnet."
+      );
+    } finally {
+      setIsConnecting(false);
+    }
+  }, [loadDashboardData, userId]);
+
+  const hasConfiguredConnection =
+    overview?.has_configured_exchange_connection ??
+    Boolean(overview?.exchange_connections?.some((connection) => connection.is_active));
+  const overviewWarnings = overview?.warnings ?? [];
 
   return (
     <div className="flex h-screen overflow-hidden bg-main-bg">
-      <Toaster 
-        position="bottom-right" 
-        expand={false} 
-        theme="dark" 
+      <Toaster
+        position="bottom-right"
+        expand={false}
+        theme="dark"
         toastOptions={{
-          className: 'bg-main-bg/70 backdrop-blur-xl border border-surface-highest text-text-primary rounded-md',
+          className: "border border-surface-highest bg-main-bg/70 text-text-primary rounded-md backdrop-blur-xl",
           classNames: {
-            error: '!bg-danger-container !border-danger-container !text-danger-accent shadow-[0_48px_48px_rgba(105,0,5,0.4)] drop-shadow-lg',
-          }
+            error: "!bg-danger-container !border-danger-container !text-danger-accent shadow-[0_48px_48px_rgba(105,0,5,0.4)] drop-shadow-lg",
+          },
         }}
       />
+      <ConnectBinanceTestnetModal
+        isOpen={isConnectModalOpen}
+        isSubmitting={isConnecting}
+        errorMessage={connectError}
+        onClose={() => {
+          if (!isConnecting) {
+            setIsConnectModalOpen(false);
+            setConnectError(null);
+          }
+        }}
+        onSubmit={handleConnectSubmit}
+      />
       <Sidebar />
-      <div className="flex flex-col flex-1 overflow-hidden relative">
-        <Navbar />
-        <main className="flex-1 overflow-y-auto p-4 md:p-6 lg:p-8 relative z-0">
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full">
-            {/* Column 1 (narrow) */}
-            <div className="lg:col-span-3 flex flex-col gap-6">
-              <PortfolioCard 
-                exchanges={metrics?.by_exchange || []} 
-                totalUnrealizedPnl={netPnlUsd} 
+      <div className="relative flex flex-1 flex-col overflow-hidden">
+        <Navbar
+          hasConfiguredExchangeConnection={hasConfiguredConnection}
+          totalPortfolioValue={overview?.total_portfolio_value ?? 0}
+          lastRefreshAt={overview?.last_refresh_at ?? null}
+          hasLiveExchangeConnection={overview?.has_live_exchange_connection ?? false}
+          statusMessage={overviewWarnings[0] ?? null}
+          unreadAlertCount={unreadAlertCount}
+          isRefreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          onOpenConnect={() => {
+            setConnectError(null);
+            setIsConnectModalOpen(true);
+          }}
+        />
+        <main className="relative z-0 flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+          {overviewWarnings.length > 0 ? (
+            <div className="mb-6 rounded-md border border-warning-accent/30 bg-warning-accent/10 px-4 py-3 text-sm text-warning-accent">
+              {overviewWarnings[0]}
+            </div>
+          ) : null}
+          <div className="grid h-full grid-cols-1 gap-6 lg:grid-cols-12">
+            <div className="flex flex-col gap-6 lg:col-span-3">
+              <PortfolioCard
+                exchanges={metrics?.by_exchange || []}
+                totalNetPnl={netPnlUsd}
+                isConnected={hasConfiguredConnection}
               />
-              {/* Discipline Score gauge */}
-              <div className="bg-surface-high hover:bg-surface-highest rounded-md p-6 relative overflow-hidden transition-all duration-300">
-                <h3 className="text-lg font-semibold mb-6 text-text-primary flex justify-between items-center">
+              <div className="relative overflow-hidden rounded-md bg-surface-high p-6 transition-all duration-300 hover:bg-surface-highest">
+                <h3 className="mb-6 flex items-center justify-between text-lg font-semibold text-text-primary">
                   <span>Discipline Score</span>
-                  <span className="text-xs bg-surface-lowest px-2 py-1 rounded-md text-text-secondary">Trailing 30d</span>
+                  <span className="rounded-md bg-surface-lowest px-2 py-1 text-xs text-text-secondary">
+                    Trailing 30d
+                  </span>
                 </h3>
                 <div className="flex items-center justify-center py-4">
-                   <div className="relative w-36 h-36 rounded-full flex items-center justify-center">
-                     {/* Outer animated ring */}
-                     <div className="absolute inset-0 rounded-full border-2 border-surface-highest"></div>
-                     {/* Score ring */}
-                     <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-                        <circle cx="50" cy="50" r="45" className="stroke-surface-highest stroke-[8px] fill-transparent" />
-                        <circle cx="50" cy="50" r="45" className="stroke-primary stroke-[8px] fill-transparent" strokeDasharray="283" strokeDashoffset={`${283 - (283 * disciplineScore) / 100}`} strokeLinecap="round" />
-                     </svg>
-                     <div className="absolute flex flex-col items-center justify-center">
-                       <span className="text-4xl font-bold font-mono tracking-tight text-text-primary">{disciplineScore}</span>
-                       <span className="text-xs text-primary font-medium tracking-wide mt-1">GRADE: {disciplineGrade}</span>
-                     </div>
-                   </div>
+                  <div className="relative flex h-36 w-36 items-center justify-center rounded-full">
+                    <div className="absolute inset-0 rounded-full border-2 border-surface-highest" />
+                    <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="45" className="fill-transparent stroke-surface-highest stroke-[8px]" />
+                      <circle
+                        cx="50"
+                        cy="50"
+                        r="45"
+                        className="fill-transparent stroke-primary stroke-[8px]"
+                        strokeDasharray="283"
+                        strokeDashoffset={`${283 - (283 * disciplineScore) / 100}`}
+                        strokeLinecap="round"
+                      />
+                    </svg>
+                    <div className="absolute flex flex-col items-center justify-center">
+                      <span className="font-mono text-4xl font-bold tracking-tight text-text-primary">{disciplineScore}</span>
+                      <span className="mt-1 text-xs font-medium tracking-wide text-primary">GRADE: {disciplineGrade}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-center mt-4">
-                  <div className="inline-flex items-center gap-2 bg-success/10 text-success px-3 py-1.5 rounded-full text-sm font-medium border border-success/20">
-                    <div className="w-1.5 h-1.5 rounded-full bg-success"></div>
-                    {isLoading ? 'Loading...' : `Grade: ${disciplineGrade}`}
+                <div className="mt-4 text-center">
+                  <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium ${metrics ? "border-success/20 bg-success/10 text-success" : "border-warning-accent/20 bg-warning-accent/10 text-warning-accent"}`}>
+                    <div className={`h-1.5 w-1.5 rounded-full ${metrics ? "bg-success" : "bg-warning-accent"}`} />
+                    {isLoading
+                      ? "Loading..."
+                      : metrics
+                        ? `Grade: ${disciplineGrade}`
+                        : hasConfiguredConnection
+                          ? "Awaiting synced trades"
+                          : "Connect an exchange"}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Column 2 (wide) */}
-            <div className="lg:col-span-6 flex flex-col gap-6">
-              <div className="glass-card rounded-2xl p-6 flex-1 flex flex-col min-h-[500px] border border-white/5 shadow-2xl">
-                <div className="flex justify-between items-center mb-6">
-                  <div>
-                    <h3 className="text-lg font-semibold text-white">Asset Contagion Graph</h3>
-                    <p className="text-sm text-gray-400 mt-1">Real-time cross-asset correlation</p>
-                  </div>
-                  <div className="px-4 py-2 bg-black/40 rounded-xl rounded-bl-none rounded-br-none border-b border-warning/50 shadow-[0_4px_20px_-4px_rgba(245,158,11,0.3)] backdrop-blur-md">
-                    <span className="text-xs text-gray-400 mr-2 uppercase tracking-wider">Risk Score</span>
-                    <span className="text-warning font-bold text-lg">65%</span>
-                  </div>
-                </div>
-                <div className="flex-1 bg-black/40 rounded-xl border border-white/5 overflow-hidden relative shadow-inner">
-                  <ContagionGraph />
-                </div>
-              </div>
+            {/* Column 2 (wide) — Portfolio Contagion Map */}
+            <div className="flex flex-col gap-6 lg:col-span-6">
+              <PortfolioContagionMap
+                userId={userId}
+                refreshToken={contagionRefreshToken}
+              />
             </div>
 
             {/* Column 3 (narrow) */}
-            <div className="lg:col-span-3 flex flex-col gap-6">
-              <OpenPositions positions={positions} isLoading={isPositionsLoading} />
+            <div className="flex flex-col gap-6 lg:col-span-3">
+              <OpenPositions
+                positions={positions}
+                isLoading={isPositionsLoading}
+                isConnected={hasConfiguredConnection}
+                sourceState={positionsSourceState}
+                statusMessage={positionsStatusMessage}
+              />
               <AlertsPanel alerts={alerts} />
-              <div className="glass-card rounded-2xl p-5 hover:border-danger/30 transition-colors duration-300">
-                 <h3 className="text-base font-semibold mb-3 text-white">Drawdown Impact</h3>
-                 <div className="flex justify-between items-center bg-gradient-to-r from-danger/20 to-danger/5 border border-danger/30 rounded-xl p-4 shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)]">
-                   <div className="flex flex-col">
-                     <span className="text-danger font-bold text-xl font-mono tracking-tight">-{drawdownPct}%</span>
-                     <span className="text-[10px] text-danger/70 uppercase tracking-wider mt-1">Peak-to-Trough</span>
-                   </div>
-                   <div className="w-10 h-10 rounded-full bg-danger/10 flex items-center justify-center shadow-[0_0_15px_rgba(239,68,68,0.3)]">
-                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-danger"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline><polyline points="16 17 22 17 22 11"></polyline></svg>
-                   </div>
-                 </div>
+              <div className="glass-card rounded-2xl p-5 transition-colors duration-300 hover:border-danger/30">
+                <h3 className="mb-3 text-base font-semibold text-white">Drawdown Impact</h3>
+                <div className="flex items-center justify-between rounded-xl border border-danger/30 bg-gradient-to-r from-danger/20 to-danger/5 p-4 shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)]">
+                  <div className="flex flex-col">
+                    <span className="font-mono text-xl font-bold tracking-tight text-danger">
+                      -{parseFloat(drawdownPct || "0").toFixed(2)}%
+                    </span>
+                    <span className="mt-1 text-[10px] uppercase tracking-wider text-danger/70">
+                      {metrics ? "Peak-to-Trough" : hasConfiguredConnection ? "Awaiting trade sync" : "No synced drawdown yet"}
+                    </span>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-danger/10 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-danger">
+                      <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
+                      <polyline points="16 17 22 17 22 11"></polyline>
+                    </svg>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

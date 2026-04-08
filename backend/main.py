@@ -21,6 +21,7 @@ from database import connect_to_mongo, close_mongo_connection, ensure_indexes, g
 from api.sync import router as sync_router
 from api.engine import router as engine_router
 from api.dashboard import router as dashboard_router
+from api.exchange_keys import router as exchange_keys_router
 from api.ws import router as ws_router
 
 # ── Logging ──────────────────────────────────────────────────────────────
@@ -65,6 +66,7 @@ app.add_middleware(
 app.include_router(sync_router)         # /api/v1/sync/*
 app.include_router(engine_router)       # /api/v1/engine/*
 app.include_router(dashboard_router)    # /api/v1/dashboard/*
+app.include_router(exchange_keys_router)  # /api/v1/exchange-keys/*
 app.include_router(ws_router)           # ws://…/ws/alerts/{user_id}
 
 

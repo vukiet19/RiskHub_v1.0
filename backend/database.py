@@ -10,8 +10,11 @@ Pool config:  minPoolSize=5, maxPoolSize=50  (MVP defaults)
 import os
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 # ---------------------------------------------------------------------------
 # Global handles — initialised on FastAPI startup, torn down on shutdown

@@ -20,23 +20,26 @@ export function Sidebar() {
       
       <div className="p-6 mt-auto">
         <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4">
-          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Live Connections</h4>
+          <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Backend Sync Flow</h4>
           <div className="space-y-3">
-            <div className="flex justify-between items-center group cursor-pointer">
-              <span className="text-sm text-gray-300 font-medium group-hover:text-white transition-colors">Binance</span>
-              <div className="flex items-center gap-2 block bg-success/10 px-2 py-0.5 rounded-full border border-success/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
-                <span className="text-[9px] uppercase tracking-wider text-success font-bold">Sync</span>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-300 font-medium">Credentials</span>
+              <div className="flex items-center gap-2 bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
+                <span className="text-[9px] uppercase tracking-wider text-primary font-bold">Encrypted</span>
               </div>
             </div>
-            <div className="flex justify-between items-center group cursor-pointer">
-              <span className="text-sm text-gray-300 font-medium group-hover:text-white transition-colors">OKX</span>
-              <div className="flex items-center gap-2 block bg-success/10 px-2 py-0.5 rounded-full border border-success/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse"></span>
-                <span className="text-[9px] uppercase tracking-wider text-success font-bold">Sync</span>
+            <div className="flex justify-between items-center">
+              <span className="text-sm text-gray-300 font-medium">Exchange Data</span>
+              <div className="flex items-center gap-2 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
+                <span className="w-1.5 h-1.5 rounded-full bg-warning-accent"></span>
+                <span className="text-[9px] uppercase tracking-wider text-gray-300 font-bold">Header Action</span>
               </div>
             </div>
           </div>
+          <p className="mt-4 text-xs leading-5 text-text-secondary">
+            Use the header action to connect Binance Testnet, then refresh to pull backend-managed positions, contagion inputs, and overview data.
+          </p>
         </div>
       </div>
     </aside>

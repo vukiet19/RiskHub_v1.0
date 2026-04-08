@@ -1,4 +1,4 @@
-import { AlertTriangle, AlertCircle, Info, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, Info, ShieldAlert } from 'lucide-react';
 
 export interface AlertData {
   id: string; // or _id

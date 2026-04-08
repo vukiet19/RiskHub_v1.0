@@ -21,3 +21,4 @@ pandas
 
 # ── Configuration ────────────────────────────
 python-dotenv
+cryptography

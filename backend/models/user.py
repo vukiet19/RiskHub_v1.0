@@ -44,6 +44,17 @@ class SyncStatus(str, Enum):
     RATE_LIMITED = "rate_limited"
 
 
+class ExchangeEnvironment(str, Enum):
+    TESTNET = "testnet"
+    MAINNET = "mainnet"
+
+
+class ExchangeMarketType(str, Enum):
+    FUTURES = "futures"
+    SPOT = "spot"
+    MIXED = "mixed"
+
+
 class AlertChannel(str, Enum):
     WEBSOCKET = "websocket"
     EMAIL = "email"
@@ -83,6 +94,8 @@ class ExchangeKeySubdocument(BaseModel):
     """
     exchange_id: str                  # CCXT exchange identifier ("binance", "okx")
     label: str                        # User-defined label
+    environment: ExchangeEnvironment = ExchangeEnvironment.MAINNET
+    market_type: ExchangeMarketType = ExchangeMarketType.MIXED
     api_key_encrypted: str            # [AES-256-GCM ENCRYPTED]
     api_secret_encrypted: str         # [AES-256-GCM ENCRYPTED]
     passphrase_encrypted: Optional[str] = None  # OKX / Gate.io only

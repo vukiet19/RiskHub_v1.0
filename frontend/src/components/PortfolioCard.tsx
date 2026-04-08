@@ -8,15 +8,15 @@ export interface ExchangeData {
 
 export interface PortfolioCardProps {
   exchanges: ExchangeData[];
-  totalUnrealizedPnl: string; // from net_pnl_usd
+  totalNetPnl: string | number;
+  isConnected: boolean;
 }
 
-export function PortfolioCard({ exchanges, totalUnrealizedPnl }: PortfolioCardProps) {
-  // If no exchanges array is available yet (loading state), show a fallback format similar to original
-  const displayExchanges = exchanges && exchanges.length > 0 ? exchanges : [
-    { exchange_id: 'binance', net_pnl_usd: '0.00', trade_count: 0, win_rate_pct: '0', avg_leverage: '0' },
-    { exchange_id: 'okx', net_pnl_usd: '0.00', trade_count: 0, win_rate_pct: '0', avg_leverage: '0' }
-  ];
+export function PortfolioCard({ exchanges, totalNetPnl, isConnected }: PortfolioCardProps) {
+  const totalPnlNumber = typeof totalNetPnl === "number"
+    ? totalNetPnl
+    : parseFloat(totalNetPnl || "0");
+  const hasExchangeData = exchanges.length > 0;
 
   return (
     <div className="bg-surface-high hover:bg-surface-highest rounded-md p-6 relative overflow-hidden group transition-colors">
@@ -27,7 +27,7 @@ export function PortfolioCard({ exchanges, totalUnrealizedPnl }: PortfolioCardPr
       <h3 className="text-lg font-semibold mb-6 text-text-primary tracking-wide">Net PnL by Exchange</h3>
       
       <div className="space-y-4 relative z-10">
-        {displayExchanges.map((ex: ExchangeData, idx: number) => {
+        {hasExchangeData ? exchanges.map((ex: ExchangeData, idx: number) => {
           const isBinance = ex.exchange_id.toLowerCase() === 'binance';
           const isOkx = ex.exchange_id.toLowerCase() === 'okx';
           const symbol = isBinance ? 'B' : isOkx ? 'O' : ex.exchange_id.charAt(0).toUpperCase();
@@ -52,15 +52,21 @@ export function PortfolioCard({ exchanges, totalUnrealizedPnl }: PortfolioCardPr
               </span>
             </div>
           );
-        })}
+        }) : (
+          <div className="rounded-md border border-dashed border-white/10 bg-surface-low px-4 py-8 text-center text-sm text-text-secondary">
+            {isConnected
+              ? "No synced trade history is available yet. Refresh after your Binance Testnet account has recorded trades."
+              : "Connect Binance Testnet to load backend-synced exchange PnL."}
+          </div>
+        )}
       </div>
       
       <div className="mt-8 pt-6 relative z-10">
         <div className="flex justify-between items-end text-sm">
           <span className="text-text-secondary uppercase tracking-widest text-xs font-semibold">Total Realized PnL</span>
           <div className="flex flex-col items-end">
-            <span className={`font-bold font-mono text-2xl drop-shadow-[0_0_8px_rgba(16,185,129,0.3)] ${parseFloat(totalUnrealizedPnl || '0') >= 0 ? 'text-success' : 'text-danger'}`}>
-              {parseFloat(totalUnrealizedPnl || '0') >= 0 ? '+' : ''}${Math.abs(parseFloat(totalUnrealizedPnl || '0')).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className={`font-bold font-mono text-2xl drop-shadow-[0_0_8px_rgba(16,185,129,0.3)] ${totalPnlNumber >= 0 ? 'text-success' : 'text-danger'}`}>
+              {totalPnlNumber >= 0 ? '+' : ''}${Math.abs(totalPnlNumber).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>

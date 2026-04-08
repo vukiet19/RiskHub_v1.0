@@ -46,6 +46,10 @@ COMMON_SYMBOLS = [
     "BNB/USDT:USDT", "XRP/USDT:USDT"
 ]
 
+STABLE_ASSETS = {
+    "USD", "USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI",
+}
+
 
 # ── Supported exchanges (MVP) ───────────────────────────────────────────
 SUPPORTED_EXCHANGES: dict[str, type] = {
@@ -115,6 +119,22 @@ def _safe_decimal(value: Any, fallback: str = "0") -> Decimal:
         return Decimal(fallback)
 
 
+def _safe_float(value: Any, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _latest_close(candles: list[list[float]]) -> Optional[float]:
+    if not candles:
+        return None
+    last_candle = candles[-1]
+    if len(last_candle) < 5:
+        return None
+    return _safe_float(last_candle[4], 0.0)
+
+
 def _parse_symbol_parts(symbol: str) -> tuple[str, str]:
     """
     Extract base/quote from a CCXT unified symbol.
@@ -154,6 +174,67 @@ def _determine_pnl_category(pnl: Decimal) -> PnlCategory:
     if pnl < 0:
         return PnlCategory.LOSS
     return PnlCategory.BREAKEVEN
+
+
+def _extract_nonzero_assets(balance: dict[str, Any]) -> list[dict[str, Any]]:
+    assets: list[dict[str, Any]] = []
+    for asset, total in balance.get("total", {}).items():
+        total_amount = _safe_decimal(total)
+        if total_amount <= 0:
+            continue
+        assets.append(
+            {
+                "asset": asset,
+                "total": str(total_amount),
+                "free": str(_safe_decimal(balance.get("free", {}).get(asset))),
+                "used": str(_safe_decimal(balance.get("used", {}).get(asset))),
+            }
+        )
+    return assets
+
+
+def _extract_futures_totals(balance: dict[str, Any]) -> dict[str, float]:
+    info = balance.get("info") or {}
+    wallet_balance = _safe_float(info.get("totalWalletBalance"))
+    unrealized_pnl = _safe_float(info.get("totalUnrealizedProfit"))
+    margin_balance = _safe_float(info.get("totalMarginBalance"))
+    available_balance = _safe_float(info.get("availableBalance"))
+
+    assets_info = info.get("assets")
+    if isinstance(assets_info, list) and assets_info:
+        wallet_balance = wallet_balance or sum(
+            _safe_float(asset.get("walletBalance"))
+            for asset in assets_info
+        )
+        unrealized_pnl = unrealized_pnl or sum(
+            _safe_float(asset.get("unrealizedProfit"))
+            for asset in assets_info
+        )
+        margin_balance = margin_balance or sum(
+            _safe_float(asset.get("marginBalance"))
+            for asset in assets_info
+        )
+        available_balance = available_balance or sum(
+            _safe_float(asset.get("availableBalance"))
+            for asset in assets_info
+        )
+
+    if wallet_balance == 0.0:
+        wallet_balance = sum(
+            _safe_float(total)
+            for asset, total in balance.get("total", {}).items()
+            if asset in STABLE_ASSETS
+        )
+
+    if margin_balance == 0.0:
+        margin_balance = wallet_balance + unrealized_pnl
+
+    return {
+        "wallet_balance_usd": round(wallet_balance, 8),
+        "unrealized_pnl_usd": round(unrealized_pnl, 8),
+        "account_value_usd": round(margin_balance, 8),
+        "available_balance_usd": round(available_balance, 8),
+    }
 
 
 # ─── CCXT → Pydantic mapping ────────────────────────────────────────────
@@ -534,27 +615,197 @@ async def fetch_spot_balances(
         await exchange.load_markets()
         balance = await exchange.fetch_balance()
 
-        assets = []
-        for asset, amount_data in balance.get("total", {}).items():
-            total_amt = _safe_decimal(amount_data)
-            if total_amt > 0:
-                assets.append({
-                    "asset": asset,
-                    "total": str(total_amt),
-                    "free": str(_safe_decimal(balance.get("free", {}).get(asset))),
-                    "used": str(_safe_decimal(balance.get("used", {}).get(asset))),
-                })
-
         return {
             "exchange_id": exchange_id,
             "total_usd": str(_safe_decimal(balance.get("total", {}).get("USDT"))),
-            "assets": assets,
+            "assets": _extract_nonzero_assets(balance),
         }
     finally:
         await exchange.close()
 
 
 # ─── Fetch OHLCV data for Correlation ────────────────────────────────────
+
+async def validate_binance_testnet_credentials(
+    api_key: str,
+    api_secret: str,
+) -> dict[str, Any]:
+    """
+    Validate Binance Testnet Futures credentials by confirming authenticated
+    read access server-side.
+    """
+    exchange = _create_exchange_client(
+        "binance",
+        api_key,
+        api_secret,
+        testnet=True,
+    )
+
+    try:
+        await exchange.load_markets()
+        exchange.options["defaultType"] = "future"
+
+        balance = await exchange.fetch_balance()
+        positions = await exchange.fetch_positions()
+        active_positions = [
+            position
+            for position in positions
+            if _safe_float(position.get("contracts")) != 0
+        ]
+
+        return {
+            "permissions_verified": ["read"],
+            "balances_count": len(_extract_nonzero_assets(balance)),
+            "positions_count": len(active_positions),
+            "warnings": [],
+        }
+    except (
+        ccxt.AuthenticationError,
+        ccxt.PermissionDenied,
+        ccxt.BadRequest,
+    ) as e:
+        raise ValueError(
+            "Binance Testnet validation failed. Check the API key, secret, and read permissions."
+        ) from e
+    finally:
+        await exchange.close()
+
+
+async def fetch_futures_account_overview(
+    exchange_id: str,
+    api_key: str,
+    api_secret: str,
+    passphrase: Optional[str] = None,
+    testnet: bool = False,
+) -> dict[str, Any]:
+    exchange = _create_exchange_client(exchange_id, api_key, api_secret, passphrase, testnet)
+
+    try:
+        exchange.options["defaultType"] = "future"
+        await exchange.load_markets()
+        balance = await exchange.fetch_balance()
+        positions = await exchange.fetch_positions()
+
+        active_positions = [
+            position
+            for position in positions
+            if _safe_float(position.get("contracts")) != 0
+        ]
+        totals = _extract_futures_totals(balance)
+
+        if totals["unrealized_pnl_usd"] == 0.0:
+            totals["unrealized_pnl_usd"] = round(
+                sum(_safe_float(position.get("unrealizedPnl")) for position in active_positions),
+                8,
+            )
+            totals["account_value_usd"] = round(
+                totals["wallet_balance_usd"] + totals["unrealized_pnl_usd"],
+                8,
+            )
+
+        return {
+            "exchange_id": exchange_id,
+            "wallet_balance_usd": totals["wallet_balance_usd"],
+            "account_value_usd": totals["account_value_usd"],
+            "total_unrealized_pnl_usd": totals["unrealized_pnl_usd"],
+            "available_balance_usd": totals["available_balance_usd"],
+            "balances_count": len(_extract_nonzero_assets(balance)),
+            "positions_count": len(active_positions),
+        }
+    finally:
+        await exchange.close()
+
+
+async def fetch_account_overview(
+    exchange_id: str,
+    api_key: str,
+    api_secret: str,
+    passphrase: Optional[str] = None,
+    *,
+    testnet: bool = False,
+    market_type: str = "futures",
+) -> dict[str, Any]:
+    """
+    Build a live account overview without relying on historical trade volume.
+    """
+    warnings: list[str] = []
+    normalized_market_type = (market_type or "futures").lower()
+
+    spot_total_usd = 0.0
+    spot_assets: list[dict[str, Any]] = []
+    if normalized_market_type in {"spot", "mixed"}:
+        try:
+            spot_balance = await fetch_spot_balances(
+                exchange_id=exchange_id,
+                api_key=api_key,
+                api_secret=api_secret,
+                passphrase=passphrase,
+                testnet=testnet,
+            )
+            spot_assets = spot_balance.get("assets", [])
+
+            price_symbols = [
+                asset["asset"]
+                for asset in spot_assets
+                if asset["asset"] not in STABLE_ASSETS
+            ]
+            ohlcv = (
+                await fetch_daily_ohlcv(exchange_id, price_symbols, days=8)
+                if price_symbols else {}
+            )
+
+            for asset in spot_assets:
+                symbol = asset["asset"]
+                quantity = _safe_float(asset.get("total"))
+                if symbol in STABLE_ASSETS:
+                    spot_total_usd += quantity
+                    continue
+
+                last_close = _latest_close(ohlcv.get(symbol, []))
+                if last_close is None or last_close <= 0:
+                    warnings.append(f"Spot pricing unavailable for {symbol}.")
+                    continue
+                spot_total_usd += quantity * last_close
+        except Exception as e:
+            logger.warning("Failed to fetch spot overview for %s: %s", exchange_id, e)
+            warnings.append("Spot balances were unavailable for this connection.")
+
+    futures_overview = {
+        "wallet_balance_usd": 0.0,
+        "account_value_usd": 0.0,
+        "total_unrealized_pnl_usd": 0.0,
+        "available_balance_usd": 0.0,
+        "balances_count": 0,
+        "positions_count": 0,
+    }
+    if normalized_market_type in {"futures", "mixed"}:
+        futures_overview = await fetch_futures_account_overview(
+            exchange_id=exchange_id,
+            api_key=api_key,
+            api_secret=api_secret,
+            passphrase=passphrase,
+            testnet=testnet,
+        )
+
+    total_portfolio_value = round(
+        spot_total_usd + futures_overview["account_value_usd"],
+        8,
+    )
+
+    return {
+        "exchange_id": exchange_id,
+        "environment": "testnet" if testnet else "mainnet",
+        "market_type": normalized_market_type,
+        "spot_total_usd": round(spot_total_usd, 8),
+        "futures_wallet_balance_usd": futures_overview["wallet_balance_usd"],
+        "futures_account_value_usd": futures_overview["account_value_usd"],
+        "total_portfolio_value_usd": total_portfolio_value,
+        "total_unrealized_pnl_usd": futures_overview["total_unrealized_pnl_usd"],
+        "balances_count": len(spot_assets) + futures_overview["balances_count"],
+        "positions_count": futures_overview["positions_count"],
+        "warnings": warnings,
+    }
+
 
 async def fetch_daily_ohlcv(
     exchange_id: str,

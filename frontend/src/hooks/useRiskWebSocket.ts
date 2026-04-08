@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { toast } from 'sonner';
+import { buildWebSocketUrl } from '../lib/riskhub-api';
 
 interface UseRiskWebSocketProps {
   userId: string;
@@ -16,7 +17,7 @@ export function useRiskWebSocket({ userId, onNewAlert }: UseRiskWebSocketProps) 
 
     const connect = () => {
       // Connect to the WebSocket endpoint
-      const wsUrl = `ws://localhost:8000/ws/alerts/${userId}`;
+      const wsUrl = buildWebSocketUrl(`/ws/alerts/${userId}`);
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
 
