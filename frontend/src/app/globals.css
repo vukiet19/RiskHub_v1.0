@@ -64,6 +64,51 @@ body {
   background: #475569;
 }
 
+/* ─── Dashboard Layout ─────────────────────────────────────────────── */
+
+/* Compact horizontal metrics strip */
+.metrics-strip {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.metrics-strip > * {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Compact metric card (Discipline Score, Drawdown) */
+.compact-metric-card {
+  background: rgba(34, 42, 61, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 14px 16px;
+  transition: background 0.2s;
+}
+.compact-metric-card:hover {
+  background: rgba(45, 52, 73, 0.7);
+}
+
+/* Main body: contagion (dominant) + right rail */
+.dashboard-body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 12px;
+  align-items: start;
+}
+
+.dashboard-contagion {
+  min-width: 0;
+}
+
+.dashboard-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
 /* ─── Contagion Module ─────────────────────────────────────────────── */
 
 /* Regime pills */
@@ -104,9 +149,9 @@ body {
 .contagion-insight {
   background: linear-gradient(90deg, rgba(26, 86, 219, 0.08) 0%, rgba(181, 196, 255, 0.04) 100%);
   border-left: 3px solid #1a56db;
-  padding: 12px 16px;
+  padding: 10px 14px;
   border-radius: 0 8px 8px 0;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.55;
   color: #c3c5d7;
 }
@@ -115,15 +160,15 @@ body {
 .contagion-metric {
   background: rgba(34, 42, 61, 0.6);
   border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 10px;
-  padding: 14px 16px;
+  border-radius: 8px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 .contagion-metric-label {
-  font-size: 10px;
+  font-size: 9px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: #c3c5d7;
@@ -131,7 +176,7 @@ body {
 }
 .contagion-metric-value {
   font-family: var(--font-mono);
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 700;
   color: #dae2fd;
   letter-spacing: -0.02em;
@@ -162,16 +207,31 @@ body {
   white-space: nowrap;
 }
 
-/* Inspector panel */
+/* Inspector panel — compact version */
+.inspector-panel-compact {
+  background: linear-gradient(180deg, rgba(34, 42, 61, 0.8) 0%, rgba(19, 27, 46, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  height: 100%;
+  width: 100%;
+}
+
+/* Legacy inspector-panel (keep for fallback compatibility) */
 .inspector-panel {
   background: linear-gradient(180deg, rgba(34, 42, 61, 0.8) 0%, rgba(19, 27, 46, 0.9) 100%);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   overflow-y: auto;
+  width: 100%;
 }
 
 /* Inspector stat row */
@@ -179,17 +239,17 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 0;
+  padding: 6px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 .inspector-stat:last-child { border-bottom: none; }
 .inspector-stat-label {
-  font-size: 12px;
+  font-size: 11px;
   color: #c3c5d7;
 }
 .inspector-stat-value {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #dae2fd;
 }
@@ -200,22 +260,22 @@ body {
   50% { r: calc(inherit + 4px); opacity: 0; }
 }
 
-/* Contagion legend */
+/* Contagion legend — compact */
 .contagion-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
-  padding: 12px 16px;
+  gap: 12px;
+  padding: 8px 12px;
   background: rgba(19, 27, 46, 0.5);
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.04);
-  font-size: 11px;
+  font-size: 10px;
   color: #c3c5d7;
 }
 .contagion-legend-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 /* Pair risk view (2-asset fallback) */
@@ -243,3 +303,170 @@ body {
   gap: 16px;
 }
 
+/* ─── Two-Panel Layout (Graph + Inspector) ─────────────────────────── */
+
+.contagion-two-panel {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  padding: 0 20px;
+  min-height: 0;
+}
+
+.contagion-panel-graph {
+  flex: 7;
+  min-width: 0;
+  display: flex;
+}
+
+.contagion-panel-inspector {
+  flex: 3;
+  min-width: 0;
+  max-width: 300px;
+  display: flex;
+}
+
+/* Graph panels shared */
+.overview-panel,
+.focus-panel {
+  background: rgba(6, 14, 32, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 12px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.overview-panel {
+  min-height: 340px;
+}
+
+.focus-panel {
+  min-height: 340px;
+}
+
+.overview-panel:hover,
+.focus-panel:hover {
+  border-color: rgba(181, 196, 255, 0.1);
+}
+
+/* Panel labels */
+.panel-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #b5c4ff;
+  padding: 10px 14px 4px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* ─── View Toggle ──────────────────────────────────────────────────── */
+
+.view-toggle {
+  display: inline-flex;
+  background: rgba(19, 27, 46, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.view-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #c3c5d7;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.view-toggle-btn:hover {
+  color: #dae2fd;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.view-toggle-btn.active {
+  background: rgba(26, 86, 219, 0.2);
+  color: #b5c4ff;
+  border: 1px solid rgba(26, 86, 219, 0.3);
+}
+
+/* ─── Responsive: Tablet ─────────────────────────────────────────────── */
+
+@media (max-width: 1100px) {
+  .dashboard-body {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-rail {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .dashboard-rail > * {
+    flex: 1 1 48%;
+    min-width: 240px;
+  }
+  .metrics-strip {
+    flex-wrap: wrap;
+  }
+  .metrics-strip > * {
+    flex: 1 1 48%;
+    min-width: 200px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .contagion-two-panel {
+    flex-direction: column;
+  }
+  .contagion-panel-graph {
+    flex: none;
+    min-height: 300px;
+  }
+  .contagion-panel-inspector {
+    flex: none;
+    max-width: none;
+    min-height: 200px;
+  }
+}
+
+/* ─── Responsive: Mobile ─────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .metrics-strip {
+    flex-direction: column;
+  }
+  .metrics-strip > * {
+    flex: none;
+    min-width: 0;
+  }
+  .dashboard-body {
+    grid-template-columns: 1fr;
+  }
+  .dashboard-rail {
+    flex-direction: column;
+  }
+  .dashboard-rail > * {
+    flex: none;
+    min-width: 0;
+  }
+  .contagion-two-panel {
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 12px;
+  }
+  .contagion-panel-graph,
+  .contagion-panel-inspector {
+    flex: none;
+    max-width: none;
+    min-height: 240px;
+  }
+}

@@ -1,22 +1,15 @@
 "use client";
 
-// ── Types ────────────────────────────────────────────────────────────────
+import { useState } from "react";
+import type { ContagionNode, ContagionCluster, LargestClusterSummary } from "./contagion/types";
 
-interface ContagionNode {
-  id: string;
-  label: string;
-  value_usd: number;
-  weight_pct: number;
-  daily_move_pct: number;
-  systemic_score: number;
-  cluster_id: string;
-  flags: string[];
-  top_correlations: { asset: string; correlation: number; delta_7d: number }[];
-}
+// ── Props ────────────────────────────────────────────────────────────────
 
 interface Props {
   node: ContagionNode | null;
   systemicAsset: string | null;
+  clusters: ContagionCluster[];
+  largestCluster: LargestClusterSummary | string | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -27,65 +20,74 @@ function formatUsd(val: number): string {
   return `$${val.toFixed(2)}`;
 }
 
-function trendLabel(delta: number): string {
-  if (delta > 0.03) return "Tightening ↑";
-  if (delta < -0.03) return "Loosening ↓";
-  return "Stable →";
-}
-
 function trendColor(delta: number): string {
   if (delta > 0.03) return "#ffb4ab";
   if (delta < -0.03) return "#a8efb4";
   return "#c3c5d7";
 }
 
-function generateActionHint(node: ContagionNode, isSystemic: boolean): string {
-  if (isSystemic) {
-    return `${node.label} dominates portfolio contagion risk. Reducing ${node.label} concentration would lower cluster-level drawdown risk more than trimming smaller positions.`;
+function roleLabel(role: string): string {
+  switch (role) {
+    case "hub":
+      return "Hub";
+    case "core":
+      return "Core";
+    case "bridge":
+      return "Bridge";
+    case "peripheral":
+      return "Peripheral";
+    default:
+      return "Member";
   }
-  if (node.weight_pct > 25) {
-    return `${node.label} is a significant portfolio weight. Monitor its top dependencies for signs of coordinated drawdowns.`;
-  }
-  if (node.systemic_score > 60) {
-    return `${node.label} has high network connectivity. Its movements are likely to influence other holdings.`;
-  }
-  if (node.daily_move_pct < -3) {
-    return `${node.label} experienced a sharp recent move. Watch for contagion spreading to connected assets.`;
-  }
-  return `${node.label} has moderate contagion exposure. No immediate action needed, but keep monitoring dependency changes.`;
 }
 
-// ── Systemic Score Ring ──────────────────────────────────────────────────
+function generateActionHint(node: ContagionNode, isSystemic: boolean): string {
+  if (isSystemic) {
+    return `${node.label} is the dominant dependency hub in this portfolio. Reducing ${node.label} overlap would lower cluster-level concentration risk more than trimming smaller positions.`;
+  }
+  if (node.weight_pct > 25) {
+    return `${node.label} is a significant portfolio weight. Consider whether its top dependencies are moving together — high overlap reduces the diversification benefit of holding multiple assets.`;
+  }
+  if (node.systemic_score > 60) {
+    return `${node.label} is tightly connected to several other holdings. A broad tightening of dependencies in this cluster could reduce the cushion between positions.`;
+  }
+  if (node.daily_move_pct < -3) {
+    return `${node.label} had a sharp recent move. Assets with strong dependency scores tend to move together, so closely connected holdings may show similar pressure.`;
+  }
+  return `${node.label} has moderate dependency exposure within this portfolio. No immediate action indicated, but monitor whether dependency scores tighten further over the next 7 days.`;
+}
+
+// ── Compact Systemic Ring ────────────────────────────────────────────────
 
 function SystemicRing({ score }: { score: number }) {
-  const r = 20;
+  const r = 16;
   const circumference = 2 * Math.PI * r;
   const offset = circumference - (circumference * Math.min(score, 100)) / 100;
   const color = score > 70 ? "#ffb4ab" : score > 40 ? "#ffb59a" : "#b5c4ff";
 
   return (
-    <svg width={52} height={52} viewBox="0 0 52 52" style={{ flexShrink: 0 }}>
-      <circle cx={26} cy={26} r={r} fill="none" stroke="#2d3449" strokeWidth={4} />
+    <svg width={40} height={40} viewBox="0 0 40 40" style={{ flexShrink: 0 }}>
+      <circle cx={20} cy={20} r={r} fill="none" stroke="#2d3449" strokeWidth={3} />
       <circle
-        cx={26}
-        cy={26}
+        cx={20}
+        cy={20}
         r={r}
         fill="none"
         stroke={color}
-        strokeWidth={4}
+        strokeWidth={3}
         strokeDasharray={circumference}
         strokeDashoffset={offset}
         strokeLinecap="round"
-        transform="rotate(-90 26 26)"
+        transform="rotate(-90 20 20)"
         style={{ transition: "stroke-dashoffset 0.6s ease" }}
       />
       <text
-        x={26}
-        y={26}
+        x={20}
+        y={20}
         textAnchor="middle"
         dominantBaseline="central"
         fill="#dae2fd"
-        fontSize={11}
+        fontSize={10}
         fontWeight={700}
         fontFamily="'JetBrains Mono', monospace"
       >
@@ -95,28 +97,67 @@ function SystemicRing({ score }: { score: number }) {
   );
 }
 
+// ── Compact Stat Cell ────────────────────────────────────────────────────
+
+function StatCell({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string;
+  color?: string;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+      <span
+        style={{
+          fontSize: 9,
+          textTransform: "uppercase",
+          letterSpacing: "0.08em",
+          color: "#c3c5d7",
+        }}
+      >
+        {label}
+      </span>
+      <span
+        style={{
+          fontFamily: "var(--font-mono)",
+          fontSize: 12,
+          fontWeight: 600,
+          color: color || "#dae2fd",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
 // ── Component ────────────────────────────────────────────────────────────
 
-export function AssetInspector({ node, systemicAsset }: Props) {
+export function AssetInspector({ node, systemicAsset, clusters, largestCluster }: Props) {
+  const [showDetails, setShowDetails] = useState(false);
+
   if (!node) {
     return (
-      <div className="inspector-panel h-full flex items-center justify-center">
-        <div className="text-center" style={{ maxWidth: 200 }}>
+      <div className="inspector-panel-compact" style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div className="text-center" style={{ maxWidth: 180 }}>
           <div
             style={{
-              width: 48, height: 48, borderRadius: "50%",
+              width: 40, height: 40, borderRadius: "50%",
               background: "rgba(45,52,73,0.6)",
               display: "flex", alignItems: "center", justifyContent: "center",
-              margin: "0 auto 12px",
+              margin: "0 auto 10px",
             }}
           >
-            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#c3c5d7" strokeWidth={2} strokeLinecap="round">
+            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="#c3c5d7" strokeWidth={2} strokeLinecap="round">
               <circle cx={11} cy={11} r={8} />
               <line x1={21} y1={21} x2={16.65} y2={16.65} />
             </svg>
           </div>
-          <p style={{ color: "#c3c5d7", fontSize: 13, lineHeight: 1.5 }}>
-            Click any asset node to inspect its contagion profile and dependencies.
+          <p style={{ color: "#c3c5d7", fontSize: 12, lineHeight: 1.5 }}>
+            Click any asset node to inspect its dependency profile.
           </p>
         </div>
       </div>
@@ -129,100 +170,129 @@ export function AssetInspector({ node, systemicAsset }: Props) {
     ? node.top_correlations.reduce((sum, c) => sum + c.delta_7d, 0) / node.top_correlations.length
     : 0;
 
+  // Find the cluster this node belongs to
+  const nodeCluster = clusters.find((c) => c.id === node.cluster_id);
+
+  // Top 3 connections only
+  const visibleConnections = node.top_correlations.slice(0, 3);
+
   return (
-    <div className="inspector-panel h-full">
-      {/* Asset header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+    <div className="inspector-panel-compact">
+      {/* Panel label */}
+      <div className="panel-label" style={{ padding: "8px 12px 2px" }}>Asset Inspector</div>
+
+      {/* Asset header — compact */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 12px" }}>
         <SystemicRing score={node.systemic_score} />
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 18, fontWeight: 700, color: "#dae2fd" }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: "#dae2fd", wordBreak: "break-word" }}>
               {node.label}
             </span>
             {isSystemic && (
               <span
                 style={{
-                  fontSize: 9, padding: "2px 7px",
+                  fontSize: 8, padding: "1px 5px",
                   background: "rgba(255,180,171,0.15)",
-                  color: "#ffb4ab", borderRadius: 6,
+                  color: "#ffb4ab", borderRadius: 4,
                   fontWeight: 600, textTransform: "uppercase",
-                  letterSpacing: "0.05em",
+                  letterSpacing: "0.05em", whiteSpace: "nowrap"
                 }}
               >
-                Dominant Hub
+                Hub
               </span>
             )}
             {node.flags.includes("shock_source") && (
               <span
                 style={{
-                  fontSize: 9, padding: "2px 7px",
+                  fontSize: 8, padding: "1px 5px",
                   background: "rgba(255,180,171,0.12)",
-                  color: "#ffb4ab", borderRadius: 6,
-                  fontWeight: 600, textTransform: "uppercase",
-                  letterSpacing: "0.05em",
+                  color: "#ffb4ab", borderRadius: 4,
+                  fontWeight: 600, textTransform: "uppercase", whiteSpace: "nowrap"
                 }}
               >
                 Shock
               </span>
             )}
           </div>
-          <span style={{ fontSize: 11, color: "#c3c5d7" }}>
-            Risk importance: {node.systemic_score.toFixed(0)}/100
-          </span>
+          <div style={{ fontSize: 10, color: "#c3c5d7", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {roleLabel(node.cluster_role)} · Score {node.systemic_score.toFixed(0)}/100
+          </div>
         </div>
       </div>
 
-      {/* Stats grid */}
-      <div>
-        <div className="inspector-stat">
-          <span className="inspector-stat-label">Portfolio Weight</span>
-          <span className="inspector-stat-value">{node.weight_pct.toFixed(1)}%</span>
-        </div>
-        <div className="inspector-stat">
-          <span className="inspector-stat-label">Value (USD)</span>
-          <span className="inspector-stat-value">{formatUsd(node.value_usd)}</span>
-        </div>
-        <div className="inspector-stat">
-          <span className="inspector-stat-label">24h Move</span>
-          <span
-            className="inspector-stat-value"
-            style={{
-              color: node.daily_move_pct > 0 ? "#a8efb4" : node.daily_move_pct < 0 ? "#ffb4ab" : "#c3c5d7",
-            }}
-          >
-            {node.daily_move_pct > 0 ? "+" : ""}
-            {node.daily_move_pct.toFixed(2)}%
-          </span>
-        </div>
+      {/* Compact 2x2 stats grid */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: "6px 12px",
+          padding: "0 12px",
+          background: "rgba(34,42,61,0.3)",
+          borderRadius: 8,
+          margin: "0 12px",
+          paddingTop: 8,
+          paddingBottom: 8,
+        }}
+      >
+        <StatCell label="Weight" value={`${node.weight_pct.toFixed(1)}%`} />
+        <StatCell label="Value" value={formatUsd(node.value_usd)} />
+        <StatCell
+          label="24h Move"
+          value={`${node.daily_move_pct > 0 ? "+" : ""}${node.daily_move_pct.toFixed(2)}%`}
+          color={node.daily_move_pct > 0 ? "#a8efb4" : node.daily_move_pct < 0 ? "#ffb4ab" : "#c3c5d7"}
+        />
+        <StatCell
+          label="7D Trend"
+          value={overallDelta > 0.03 ? "Tightening ↑" : overallDelta < -0.03 ? "Loosening ↓" : "Stable →"}
+          color={trendColor(overallDelta)}
+        />
       </div>
 
-      {/* Top connections */}
-      {node.top_correlations.length > 0 && (
-        <div>
+      {/* Cluster membership — compact */}
+      {nodeCluster && (
+        <div
+          style={{
+            background: "rgba(181,196,255,0.05)",
+            border: "1px solid rgba(181,196,255,0.1)",
+            borderRadius: 6, padding: "6px 10px",
+            margin: "0 12px",
+            fontSize: 11,
+            wordBreak: "break-word",
+          }}
+        >
+          <span style={{ color: "#b5c4ff", fontWeight: 600 }}>{nodeCluster.label}</span>
+          <span style={{ color: "#c3c5d7" }}> · {nodeCluster.member_count} assets · {nodeCluster.total_weight_pct.toFixed(1)}%</span>
+        </div>
+      )}
+
+      {/* Top connections — max 3 */}
+      {visibleConnections.length > 0 && (
+        <div style={{ padding: "0 12px" }}>
           <div
             style={{
-              fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em",
-              color: "#c3c5d7", marginBottom: 8,
+              fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em",
+              color: "#c3c5d7", marginBottom: 4,
             }}
           >
-            Top Connected Assets
+            Top Dependencies
           </div>
-          {node.top_correlations.map((c, i) => (
+          {visibleConnections.map((c, i) => (
             <div
               key={c.asset}
               style={{
                 display: "flex", justifyContent: "space-between",
-                alignItems: "center", padding: "6px 0",
-                borderBottom: i < node.top_correlations.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                alignItems: "center", padding: "3px 0", gap: 8,
+                borderBottom: i < visibleConnections.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
               }}
             >
-              <span style={{ fontSize: 13, fontWeight: 600, color: "#dae2fd" }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "#dae2fd", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
                 {c.asset}
               </span>
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
                 <span
                   style={{
-                    fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 600,
+                    fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600,
                     color: c.correlation >= 0.7 ? "#ffb4ab" : "#ffb59a",
                   }}
                 >
@@ -230,7 +300,7 @@ export function AssetInspector({ node, systemicAsset }: Props) {
                 </span>
                 <span
                   style={{
-                    fontFamily: "var(--font-mono)", fontSize: 11,
+                    fontFamily: "var(--font-mono)", fontSize: 10,
                     color: trendColor(c.delta_7d),
                   }}
                 >
@@ -242,31 +312,24 @@ export function AssetInspector({ node, systemicAsset }: Props) {
         </div>
       )}
 
-      {/* Strongest dependency */}
+      {/* Strongest dependency highlight */}
       {strongestDep && (
         <div
           style={{
-            background: "rgba(255,180,171,0.06)",
-            border: "1px solid rgba(255,180,171,0.12)",
-            borderRadius: 8, padding: "10px 14px",
+            background: "rgba(255,180,171,0.05)",
+            border: "1px solid rgba(255,180,171,0.1)",
+            borderRadius: 6, padding: "6px 10px",
+            margin: "0 12px",
           }}
         >
-          <div
-            style={{
-              fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em",
-              color: "#c3c5d7", marginBottom: 6,
-            }}
-          >
-            Strongest Dependency
-          </div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: "#dae2fd" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#dae2fd", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
               {node.label} ↔ {strongestDep.asset}
             </span>
             <span
               style={{
-                fontFamily: "var(--font-mono)", fontSize: 14, fontWeight: 700,
-                color: "#ffb4ab",
+                fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 700,
+                color: "#ffb4ab", flexShrink: 0
               }}
             >
               {strongestDep.correlation.toFixed(2)}
@@ -275,36 +338,82 @@ export function AssetInspector({ node, systemicAsset }: Props) {
         </div>
       )}
 
-      {/* 7D trend */}
-      <div className="inspector-stat">
-        <span className="inspector-stat-label">7D Dependency Trend</span>
-        <span
-          className="inspector-stat-value"
-          style={{ color: trendColor(overallDelta) }}
-        >
-          {trendLabel(overallDelta)}
-        </span>
-      </div>
-
-      {/* Action hint */}
-      <div
-        style={{
-          background: "rgba(26,86,219,0.06)",
-          border: "1px solid rgba(26,86,219,0.15)",
-          borderRadius: 8, padding: "12px 14px",
-          fontSize: 12, lineHeight: 1.6,
-          color: "#c3c5d7",
-        }}
-      >
-        <div
+      {/* Expandable details */}
+      <div style={{ padding: "0 12px" }}>
+        <button
+          onClick={() => setShowDetails(!showDetails)}
           style={{
-            fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em",
-            color: "#b5c4ff", marginBottom: 6, fontWeight: 600,
+            background: "none", border: "none",
+            color: "#b5c4ff", fontSize: 10,
+            cursor: "pointer", padding: 0,
+            fontWeight: 600, letterSpacing: "0.05em",
+            textTransform: "uppercase",
           }}
         >
-          Action Hint
-        </div>
-        {generateActionHint(node, isSystemic)}
+          {showDetails ? "▲ Hide Details" : "▼ More Details"}
+        </button>
+
+        {showDetails && (
+          <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+            {/* Action hint */}
+            <div
+              style={{
+                background: "rgba(26,86,219,0.05)",
+                border: "1px solid rgba(26,86,219,0.12)",
+                borderRadius: 6, padding: "8px 10px",
+                fontSize: 11, lineHeight: 1.5,
+                color: "#c3c5d7",
+                wordBreak: "break-word",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em",
+                  color: "#b5c4ff", marginBottom: 4, fontWeight: 600,
+                }}
+              >
+                Action Hint
+              </div>
+              {generateActionHint(node, isSystemic)}
+            </div>
+
+            {/* Largest cluster */}
+            {largestCluster && (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, gap: 8 }}>
+                <span style={{ color: "#c3c5d7", flexShrink: 0 }}>Largest Cluster</span>
+                <span style={{ fontFamily: "var(--font-mono)", fontWeight: 600, color: "#dae2fd", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "right" }}>
+                  {typeof largestCluster === "string"
+                    ? (clusters.find((c) => c.id === largestCluster)?.label || largestCluster)
+                    : largestCluster.label}
+                </span>
+              </div>
+            )}
+
+            {/* Extra connections beyond top 3 */}
+            {node.top_correlations.length > 3 && (
+              <div>
+                <div style={{ fontSize: 9, textTransform: "uppercase", letterSpacing: "0.08em", color: "#c3c5d7", marginBottom: 3 }}>
+                  Other Connections
+                </div>
+                {node.top_correlations.slice(3).map((c, i) => (
+                  <div
+                    key={c.asset}
+                    style={{
+                      display: "flex", justifyContent: "space-between",
+                      alignItems: "center", padding: "2px 0", gap: 8,
+                      borderBottom: i < node.top_correlations.length - 4 ? "1px solid rgba(255,255,255,0.03)" : "none",
+                    }}
+                  >
+                    <span style={{ fontSize: 11, color: "#dae2fd", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{c.asset}</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "#c3c5d7", flexShrink: 0 }}>
+                      {c.correlation.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

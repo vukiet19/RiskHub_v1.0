@@ -99,8 +99,12 @@ def _generate_insight(
     top_pair: dict,
     regime_label: str,
     delta_7d: float,
+    edge_count: int,
 ) -> str:
     """Generate a single human-readable insight sentence."""
+    if edge_count == 0:
+        return "Current portfolio assets are moving largely independently. No significant contagion risk links detected."
+
     direction = "tightened" if delta_7d > 0 else "loosened" if delta_7d < 0 else "remained stable"
 
     pair_str = ""
@@ -302,6 +306,7 @@ def calculate_contagion_graph(
             trend = _edge_trend(delta)
 
             edges.append({
+                "id": f"{sym_a}|{sym_b}",
                 "source": sym_a,
                 "target": sym_b,
                 "correlation": round(corr_val, 4),
@@ -309,6 +314,8 @@ def calculate_contagion_graph(
                 "delta_7d": delta,
                 "band": band,
                 "trend": trend,
+                "display_strength": round(abs_corr, 4),
+                "topology_role": "context",
             })
             edge_set.add((sym_a, sym_b))
 
@@ -375,23 +382,108 @@ def calculate_contagion_graph(
             reverse=True
         )[:3]
 
-    # ── 11. Cluster assignment (simple: group by highest-corr partner)
-    cluster_ids: Dict[str, str] = {}
+    # ── 11. Cluster assignment & topology roles ─────────────────────
+    adj: Dict[str, List[str]] = {s: [] for s in symbols}
+    for e in edges:
+        adj[e["source"]].append(e["target"])
+        adj[e["target"]].append(e["source"])
+        
+    visited = set()
+    components = []
+    for s in symbols:
+        if s not in visited:
+            comp = []
+            queue = [s]
+            visited.add(s)
+            while queue:
+                curr = queue.pop(0)
+                comp.append(curr)
+                for nxt in adj[curr]:
+                    if nxt not in visited:
+                        visited.add(nxt)
+                        queue.append(nxt)
+            components.append(comp)
+
+    cluster_members = {}
+    cluster_ids = {}
+    clusters = []
+    
+    for comp in components:
+        sys_asset = max(comp, key=lambda m: systemic_scores.get(m, 0.0))
+        cid = f"cluster_{sys_asset.lower()}"
+        cluster_members[cid] = comp
+        for m in comp:
+            cluster_ids[m] = cid
+            
+        total_w = sum(weight_pcts[m] for m in comp)
+        avg_move = sum(daily_moves[m] for m in comp) / len(comp) if len(comp) > 0 else 0.0
+        risk_level = "high" if avg_move < -3.0 else "elevated" if avg_move > 3.0 else "moderate"
+        clusters.append({
+            "id": cid,
+            "label": f"{sys_asset} Cluster" if len(comp) > 1 else f"Isolated {comp[0]}",
+            "members": comp,
+            "member_count": len(comp),
+            "total_weight_pct": round(total_w, 2),
+            "systemic_asset": sys_asset,
+            "risk_level": risk_level,
+        })
+    
+    largest_cluster = None
+    if clusters:
+        lc = max(clusters, key=lambda c: c["total_weight_pct"])
+        largest_cluster = {
+            "cluster_id": lc["id"],
+            "label": lc["label"],
+            "member_count": lc["member_count"],
+            "total_weight_pct": lc["total_weight_pct"],
+            "systemic_asset": lc["systemic_asset"],
+        }
+
+    # Topology roles for edges
+    top1_links = set()
     for s in symbols:
         if top_corrs[s]:
-            cluster_ids[s] = f"cluster_{top_corrs[s][0]['asset'].lower()}"
+            top1_links.add(tuple(sorted([s, top_corrs[s][0]['asset']])))
+    
+    for edge in edges:
+        pair = tuple(sorted([edge["source"], edge["target"]]))
+        if pair in top1_links:
+            edge["topology_role"] = "primary"
+        elif edge["abs_correlation"] >= BAND_HIGH:
+            edge["topology_role"] = "secondary"
         else:
-            cluster_ids[s] = f"cluster_{s.lower()}"
+            edge["topology_role"] = "context"
 
-    # ── 12. Flags ───────────────────────────────────────────────────
+    # ── 12. Flags & Roles ───────────────────────────────────────────
     flags_map: Dict[str, List[str]] = {s: [] for s in symbols}
+    cluster_roles: Dict[str, str] = {s: "peripheral" for s in symbols}
+    
     # Shock source: >3% daily drop
     for s in symbols:
         if daily_moves.get(s, 0) < -3.0:
             flags_map[s].append("shock_source")
+        
+        # Core approximation based on systemic influence
+        if systemic_scores.get(s, 0) > 30.0:
+            cluster_roles[s] = "core"
+
+    # Bridge approximation: links across clusters
+    for edge in edges:
+        s_cid = cluster_ids.get(edge["source"])
+        t_cid = cluster_ids.get(edge["target"])
+        if s_cid != t_cid and edge["abs_correlation"] >= BAND_MODERATE:
+            if cluster_roles[edge["source"]] == "peripheral":
+                cluster_roles[edge["source"]] = "bridge"
+            if cluster_roles[edge["target"]] == "peripheral":
+                cluster_roles[edge["target"]] = "bridge"
+
     # Dominant hub
     if systemic_asset:
         flags_map[systemic_asset].append("dominant_hub")
+    
+    for c in clusters:
+        if c["member_count"] > 1:
+            cluster_roles[c["systemic_asset"]] = "hub"
 
     # ── 13. Build nodes ─────────────────────────────────────────────
     nodes = []
@@ -404,9 +496,35 @@ def calculate_contagion_graph(
             "daily_move_pct": daily_moves[s],
             "systemic_score": systemic_scores[s],
             "cluster_id": cluster_ids[s],
+            "cluster_role": cluster_roles[s],
             "flags": flags_map[s],
             "top_correlations": top_corrs[s],
         })
+
+    # Overview guidance: Sparse topology-preserving subset (MST-like)
+    parent = {s: s for s in symbols}
+
+    def find(i):
+        if parent[i] == i:
+            return i
+        parent[i] = find(parent[i])
+        return parent[i]
+
+    def union(i, j):
+        root_i = find(i)
+        root_j = find(j)
+        if root_i != root_j:
+            parent[root_i] = root_j
+            return True
+        return False
+
+    sorted_edges = sorted(edges, key=lambda x: x["abs_correlation"], reverse=True)
+    mst_edge_ids = []
+    for e in sorted_edges:
+        if union(e["source"], e["target"]):
+            mst_edge_ids.append(e["id"])
+
+    overview_edge_ids = mst_edge_ids
 
     # ── 14. Risk score and delta ────────────────────────────────────
     risk_score = _compute_contagion_risk_score(corr_current, weight_pcts, symbols)
@@ -434,6 +552,7 @@ def calculate_contagion_graph(
         top_risk_pair,
         regime["label"],
         risk_delta,
+        len(edges),
     )
 
     # ── 17. Assemble response ───────────────────────────────────────
@@ -446,11 +565,24 @@ def calculate_contagion_graph(
             "contagion_risk_delta_7d": risk_delta,
             "systemic_asset": systemic_asset,
             "top_risk_pair": top_risk_pair,
+            "largest_cluster": largest_cluster,
             "network_density": network_density,
             "insight": insight,
         },
         "nodes": nodes,
         "edges": edges,
+        "clusters": clusters,
+        "display": {
+            "default_selected_asset": systemic_asset,
+            "overview": {
+                "node_ids": [n["id"] for n in nodes],
+                "edge_ids": overview_edge_ids,
+            },
+            "focus": {
+                "max_primary_links": 3,
+                "max_context_links": 3
+            }
+        }
     }
 
 
@@ -468,9 +600,22 @@ def _empty_response(window_days: int = 30) -> Dict[str, Any]:
             "contagion_risk_delta_7d": 0,
             "systemic_asset": None,
             "top_risk_pair": None,
+            "largest_cluster": None,
             "network_density": 0,
             "insight": "Recent portfolio data is too limited for a stable contagion map.",
         },
         "nodes": [],
         "edges": [],
+        "clusters": [],
+        "display": {
+            "default_selected_asset": None,
+            "overview": {
+                "node_ids": [],
+                "edge_ids": [],
+            },
+            "focus": {
+                "max_primary_links": 3,
+                "max_context_links": 3
+            }
+        }
     }

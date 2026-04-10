@@ -30,7 +30,7 @@ export function OpenPositions({
       : statusMessage || "No open futures positions found.";
 
   return (
-    <div className="glass-card flex-1 rounded-2xl p-6 shadow-xl border border-white/5 relative z-10 transition-all hover:border-white/10 group">
+    <div className="glass-card rounded-2xl p-6 shadow-xl border border-white/5 relative z-10 transition-all hover:border-white/10 group">
       <h3 className="text-lg font-semibold mb-5 text-white flex justify-between items-center">
         <span>Open Positions</span>
         <span className="text-xs bg-primary/20 text-primary px-2.5 py-1 rounded-full font-medium border border-primary/30">

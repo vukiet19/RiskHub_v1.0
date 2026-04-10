@@ -114,6 +114,94 @@ async function readErrorMessage(response: Response): Promise<string> {
   return response.statusText || `Request failed with status ${response.status}`;
 }
 
+// ── Compact Discipline Score Card ────────────────────────────────────────
+
+function DisciplineScoreCard({
+  score,
+  grade,
+  isLoading,
+  hasMetrics,
+  isConnected,
+}: {
+  score: number;
+  grade: string;
+  isLoading: boolean;
+  hasMetrics: boolean;
+  isConnected: boolean;
+}) {
+  const r = 18;
+  const circumference = 2 * Math.PI * r;
+  const offset = circumference - (circumference * score) / 100;
+
+  return (
+    <div className="compact-metric-card">
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <svg width={48} height={48} viewBox="0 0 52 52" style={{ flexShrink: 0 }}>
+          <circle cx={26} cy={26} r={r} fill="none" stroke="#2d3449" strokeWidth={4} />
+          <circle
+            cx={26} cy={26} r={r} fill="none" stroke="#1a56db" strokeWidth={4}
+            strokeDasharray={circumference} strokeDashoffset={offset}
+            strokeLinecap="round" transform="rotate(-90 26 26)"
+            style={{ transition: "stroke-dashoffset 0.6s ease" }}
+          />
+          <text x={26} y={26} textAnchor="middle" dominantBaseline="central"
+            fill="#dae2fd" fontSize={12} fontWeight={700} fontFamily="'JetBrains Mono', monospace">
+            {score}
+          </text>
+        </svg>
+        <div>
+          <div className="text-xs font-semibold text-text-primary tracking-wide">Discipline Score</div>
+          <div className="text-[10px] text-text-secondary uppercase tracking-widest">
+            {isLoading
+              ? "Loading..."
+              : hasMetrics
+                ? `Grade: ${grade} · 30d`
+                : isConnected
+                  ? "Awaiting synced trades"
+                  : "Connect an exchange"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Compact Drawdown Card ────────────────────────────────────────────────
+
+function DrawdownCard({
+  drawdownPct,
+  hasMetrics,
+  isConnected,
+}: {
+  drawdownPct: string;
+  hasMetrics: boolean;
+  isConnected: boolean;
+}) {
+  return (
+    <div className="compact-metric-card">
+      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-danger/10 flex-shrink-0">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-danger">
+            <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
+            <polyline points="16 17 22 17 22 11"></polyline>
+          </svg>
+        </div>
+        <div>
+          <div className="text-xs font-semibold text-text-primary tracking-wide">Max Drawdown</div>
+          <span className="font-mono text-lg font-bold tracking-tight text-danger">
+            -{parseFloat(drawdownPct || "0").toFixed(2)}%
+          </span>
+          <div className="text-[10px] text-text-secondary uppercase tracking-widest">
+            {hasMetrics ? "Peak-to-Trough" : isConnected ? "Awaiting trade sync" : "No synced data"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Dashboard ──────────────────────────────────────────────────────
+
 export default function Dashboard() {
   const userId = DEFAULT_USER_ID;
 
@@ -132,6 +220,7 @@ export default function Dashboard() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [contagionRefreshToken, setContagionRefreshToken] = useState(0);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const loadDashboardData = useCallback(async (options?: { showSkeleton?: boolean }) => {
     const showSkeleton = options?.showSkeleton ?? false;
@@ -143,18 +232,10 @@ export default function Dashboard() {
 
     try {
       const [overviewRes, metricsRes, alertsRes, positionsRes] = await Promise.all([
-        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/overview`), {
-          cache: "no-store",
-        }),
-        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/metrics`), {
-          cache: "no-store",
-        }),
-        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/alerts?unread_only=true`), {
-          cache: "no-store",
-        }),
-        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/positions`), {
-          cache: "no-store",
-        }),
+        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/overview`), { cache: "no-store" }),
+        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/metrics`), { cache: "no-store" }),
+        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/alerts?unread_only=true`), { cache: "no-store" }),
+        fetch(buildApiUrl(`/api/v1/dashboard/${userId}/positions`), { cache: "no-store" }),
       ]);
 
       if (!overviewRes.ok) {
@@ -302,9 +383,7 @@ export default function Dashboard() {
         buildApiUrl(`/api/v1/exchange-keys/${userId}/binance-testnet/connect`),
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             api_key: payload.apiKey,
             api_secret: payload.apiSecret,
@@ -394,7 +473,7 @@ export default function Dashboard() {
         }}
         onSubmit={handleConnectSubmit}
       />
-      <Sidebar />
+      <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((prev) => !prev)} />
       <div className="relative flex flex-1 flex-col overflow-hidden">
         <Navbar
           hasConfiguredExchangeConnection={hasConfiguredConnection}
@@ -410,72 +489,46 @@ export default function Dashboard() {
             setIsConnectModalOpen(true);
           }}
         />
-        <main className="relative z-0 flex-1 overflow-y-auto p-4 md:p-6 lg:p-8">
+        <main className="relative z-0 flex-1 overflow-y-auto p-4 md:p-5 lg:p-6">
           {overviewWarnings.length > 0 ? (
-            <div className="mb-6 rounded-md border border-warning-accent/30 bg-warning-accent/10 px-4 py-3 text-sm text-warning-accent">
+            <div className="mb-4 rounded-md border border-warning-accent/30 bg-warning-accent/10 px-4 py-3 text-sm text-warning-accent">
               {overviewWarnings[0]}
             </div>
           ) : null}
-          <div className="grid h-full grid-cols-1 gap-6 lg:grid-cols-12">
-            <div className="flex flex-col gap-6 lg:col-span-3">
-              <PortfolioCard
-                exchanges={metrics?.by_exchange || []}
-                totalNetPnl={netPnlUsd}
-                isConnected={hasConfiguredConnection}
-              />
-              <div className="relative overflow-hidden rounded-md bg-surface-high p-6 transition-all duration-300 hover:bg-surface-highest">
-                <h3 className="mb-6 flex items-center justify-between text-lg font-semibold text-text-primary">
-                  <span>Discipline Score</span>
-                  <span className="rounded-md bg-surface-lowest px-2 py-1 text-xs text-text-secondary">
-                    Trailing 30d
-                  </span>
-                </h3>
-                <div className="flex items-center justify-center py-4">
-                  <div className="relative flex h-36 w-36 items-center justify-center rounded-full">
-                    <div className="absolute inset-0 rounded-full border-2 border-surface-highest" />
-                    <svg className="h-full w-full -rotate-90 transform" viewBox="0 0 100 100">
-                      <circle cx="50" cy="50" r="45" className="fill-transparent stroke-surface-highest stroke-[8px]" />
-                      <circle
-                        cx="50"
-                        cy="50"
-                        r="45"
-                        className="fill-transparent stroke-primary stroke-[8px]"
-                        strokeDasharray="283"
-                        strokeDashoffset={`${283 - (283 * disciplineScore) / 100}`}
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <div className="absolute flex flex-col items-center justify-center">
-                      <span className="font-mono text-4xl font-bold tracking-tight text-text-primary">{disciplineScore}</span>
-                      <span className="mt-1 text-xs font-medium tracking-wide text-primary">GRADE: {disciplineGrade}</span>
-                    </div>
-                  </div>
-                </div>
-                <div className="mt-4 text-center">
-                  <div className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm font-medium ${metrics ? "border-success/20 bg-success/10 text-success" : "border-warning-accent/20 bg-warning-accent/10 text-warning-accent"}`}>
-                    <div className={`h-1.5 w-1.5 rounded-full ${metrics ? "bg-success" : "bg-warning-accent"}`} />
-                    {isLoading
-                      ? "Loading..."
-                      : metrics
-                        ? `Grade: ${disciplineGrade}`
-                        : hasConfiguredConnection
-                          ? "Awaiting synced trades"
-                          : "Connect an exchange"}
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Column 2 (wide) — Portfolio Contagion Map */}
-            <div className="flex flex-col gap-6 lg:col-span-6">
+          {/* ── Compact Metrics Strip ─── */}
+          <div className="metrics-strip">
+            <PortfolioCard
+              exchanges={metrics?.by_exchange || []}
+              totalNetPnl={netPnlUsd}
+              isConnected={hasConfiguredConnection}
+            />
+            <DisciplineScoreCard
+              score={disciplineScore}
+              grade={disciplineGrade}
+              isLoading={isLoading}
+              hasMetrics={!!metrics}
+              isConnected={hasConfiguredConnection}
+            />
+            <DrawdownCard
+              drawdownPct={drawdownPct}
+              hasMetrics={!!metrics}
+              isConnected={hasConfiguredConnection}
+            />
+          </div>
+
+          {/* ── Main Content: Contagion (dominant) + Right Rail ─── */}
+          <div className="dashboard-body">
+            {/* Contagion module — large primary workspace */}
+            <div className="dashboard-contagion">
               <PortfolioContagionMap
                 userId={userId}
                 refreshToken={contagionRefreshToken}
               />
             </div>
 
-            {/* Column 3 (narrow) */}
-            <div className="flex flex-col gap-6 lg:col-span-3">
+            {/* Right rail — Open Positions + Alerts */}
+            <div className="dashboard-rail">
               <OpenPositions
                 positions={positions}
                 isLoading={isPositionsLoading}
@@ -484,25 +537,6 @@ export default function Dashboard() {
                 statusMessage={positionsStatusMessage}
               />
               <AlertsPanel alerts={alerts} />
-              <div className="glass-card rounded-2xl p-5 transition-colors duration-300 hover:border-danger/30">
-                <h3 className="mb-3 text-base font-semibold text-white">Drawdown Impact</h3>
-                <div className="flex items-center justify-between rounded-xl border border-danger/30 bg-gradient-to-r from-danger/20 to-danger/5 p-4 shadow-[inset_0_1px_4px_rgba(0,0,0,0.5)]">
-                  <div className="flex flex-col">
-                    <span className="font-mono text-xl font-bold tracking-tight text-danger">
-                      -{parseFloat(drawdownPct || "0").toFixed(2)}%
-                    </span>
-                    <span className="mt-1 text-[10px] uppercase tracking-wider text-danger/70">
-                      {metrics ? "Peak-to-Trough" : hasConfiguredConnection ? "Awaiting trade sync" : "No synced drawdown yet"}
-                    </span>
-                  </div>
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-danger/10 shadow-[0_0_15px_rgba(239,68,68,0.3)]">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-danger">
-                      <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
-                      <polyline points="16 17 22 17 22 11"></polyline>
-                    </svg>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
         </main>
