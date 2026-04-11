@@ -13,6 +13,7 @@ import type {
   ContagionApiResponse,
   ContagionSourceState,
   ContagionSummary,
+  ContagionScope,
 } from "./contagion/types";
 
 // ── Props ────────────────────────────────────────────────────────────────
@@ -47,6 +48,28 @@ function riskScoreColor(score: number): string {
   if (score >= 70) return "#ffb4ab";
   if (score >= 45) return "#ffb59a";
   return "#a8efb4";
+}
+
+const SCOPE_LABELS: Record<ContagionScope, string> = {
+  all: "All Exchanges",
+  binance: "Binance",
+  okx: "OKX",
+};
+
+function isContagionScope(value: unknown): value is ContagionScope {
+  return value === "all" || value === "binance" || value === "okx";
+}
+
+function getScopeLabel(scope: ContagionScope): string {
+  return SCOPE_LABELS[scope];
+}
+
+function getScopeSubtitle(scope: ContagionScope, scopeLabel: string): string {
+  if (scope === "all") {
+    return "Portfolio-wide cross-exchange dependency analysis";
+  }
+
+  return `${scopeLabel}-only dependency view`;
 }
 
 /**
@@ -133,13 +156,30 @@ function ContagionLegend() {
 
 // ── View Toggle ──────────────────────────────────────────────────────────
 
-function ViewToggle({ view, onChange }: { view: GraphView; onChange: (v: GraphView) => void }) {
+function ViewToggle({
+  view,
+  onChange,
+  disabled = false,
+}: {
+  view: GraphView;
+  onChange: (v: GraphView) => void;
+  disabled?: boolean;
+}) {
+  const disabledTitle = "Graph view not available for this state";
   return (
-    <div className="view-toggle">
+    // wrapper remains pointer-interactive so the title tooltip surfaces on hover
+    <div
+      className="view-toggle"
+      style={disabled ? { opacity: 0.45 } : undefined}
+      title={disabled ? disabledTitle : undefined}
+    >
       <button
         type="button"
         className={`view-toggle-btn ${view === "overview" ? "active" : ""}`}
         onClick={() => onChange("overview")}
+        disabled={disabled}
+        aria-disabled={disabled}
+        style={disabled ? { pointerEvents: "none", cursor: "not-allowed" } : undefined}
       >
         <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
           <circle cx={12} cy={12} r={3} /><circle cx={5} cy={5} r={2} /><circle cx={19} cy={5} r={2} /><circle cx={5} cy={19} r={2} /><circle cx={19} cy={19} r={2} />
@@ -150,11 +190,44 @@ function ViewToggle({ view, onChange }: { view: GraphView; onChange: (v: GraphVi
         type="button"
         className={`view-toggle-btn ${view === "focus" ? "active" : ""}`}
         onClick={() => onChange("focus")}
+        disabled={disabled}
+        aria-disabled={disabled}
+        style={disabled ? { pointerEvents: "none", cursor: "not-allowed" } : undefined}
       >
         <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
           <circle cx={12} cy={12} r={4} /><line x1={12} y1={2} x2={12} y2={6} /><line x1={12} y1={18} x2={12} y2={22} /><line x1={2} y1={12} x2={6} y2={12} /><line x1={18} y1={12} x2={22} y2={12} />
         </svg>
         Focus
+      </button>
+    </div>
+  );
+}
+
+// ── Scope Toggle ─────────────────────────────────────────────────────────
+
+function ScopeToggle({ scope, onChange }: { scope: ContagionScope; onChange: (s: ContagionScope) => void }) {
+  return (
+    <div className="view-toggle">
+      <button
+        type="button"
+        className={`view-toggle-btn ${scope === "all" ? "active" : ""}`}
+        onClick={() => onChange("all")}
+      >
+        All
+      </button>
+      <button
+        type="button"
+        className={`view-toggle-btn ${scope === "binance" ? "active" : ""}`}
+        onClick={() => onChange("binance")}
+      >
+        Binance
+      </button>
+      <button
+        type="button"
+        className={`view-toggle-btn ${scope === "okx" ? "active" : ""}`}
+        onClick={() => onChange("okx")}
+      >
+        OKX
       </button>
     </div>
   );
@@ -254,26 +327,52 @@ function ModuleHeader({
   graphView,
   onViewChange,
   showToggle,
+  viewToggleDisabled,
+  scope,
+  scopeLabel,
+  onScopeChange,
+  marketDataNote,
 }: {
   regime: { label: "calm" | "elevated" | "stress"; reason: string };
   generatedAt: string;
   graphView?: GraphView;
   onViewChange?: (v: GraphView) => void;
   showToggle?: boolean;
+  /** When true, the ViewToggle renders but is visually disabled — used in fallback states. */
+  viewToggleDisabled?: boolean;
+  scope?: ContagionScope;
+  scopeLabel?: string;
+  onScopeChange?: (s: ContagionScope) => void;
+  marketDataNote?: string | null;
 }) {
+  const activeScope = scope ?? "all";
+  const activeScopeLabel = scopeLabel || getScopeLabel(activeScope);
+  const subtitle = getScopeSubtitle(activeScope, activeScopeLabel);
+
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 10 }}>
       <div style={{ minWidth: 0 }}>
         <h3 style={{ fontSize: 16, fontWeight: 700, color: "#dae2fd", margin: 0, lineHeight: 1.3 }}>
           Portfolio Contagion Map
         </h3>
         <p style={{ fontSize: 11, color: "#c3c5d7", margin: "2px 0 0", lineHeight: 1.3 }}>
-          Cross-asset dependency analysis
+          {subtitle}
         </p>
+        {marketDataNote ? (
+          <p style={{ fontSize: 10, color: "#b5c4ff", margin: "4px 0 0", lineHeight: 1.3 }}>
+            {marketDataNote}
+          </p>
+        ) : null}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-        {showToggle && graphView && onViewChange && (
-          <ViewToggle view={graphView} onChange={onViewChange} />
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+        {/* ViewToggle: always render when showToggle=true so the header stays stable.
+            In fallback states, graphView/onViewChange may not be meaningful, so we
+            render it disabled to preserve layout without implying it works. */}
+        {showToggle && graphView !== undefined && onViewChange !== undefined && (
+          <ViewToggle view={graphView} onChange={onViewChange} disabled={viewToggleDisabled} />
+        )}
+        {showToggle && scope !== undefined && onScopeChange && (
+          <ScopeToggle scope={scope} onChange={onScopeChange} />
         )}
         <RegimePill label={regime.label} reason={regime.reason} />
         <span style={{ fontSize: 9, color: "#c3c5d7", whiteSpace: "nowrap" }}>
@@ -286,6 +385,45 @@ function ModuleHeader({
 
 function InsightStrip({ insight }: { insight: string }) {
   return <div className="contagion-insight" style={{ marginBottom: 10 }}>{insight}</div>;
+}
+
+function HoldingsWarningBanner({
+  title,
+  warnings,
+}: {
+  title: string;
+  warnings: string[];
+}) {
+  return (
+    <div
+      style={{
+        marginBottom: 10,
+        borderRadius: 10,
+        border: "1px solid rgba(255, 181, 154, 0.24)",
+        background: "rgba(255, 181, 154, 0.1)",
+        padding: "10px 12px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 12,
+          fontWeight: 700,
+          color: "#ffd0c0",
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+      >
+        {title}
+      </div>
+      <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+        {warnings.map((warning, index) => (
+          <div key={`${warning}-${index}`} style={{ fontSize: 12, color: "#ffd8cc", lineHeight: 1.55 }}>
+            {warning}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function SummaryRow({ summary, clusters }: { summary: ContagionSummary; clusters: ContagionCluster[] }) {
@@ -321,10 +459,15 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   const [data, setData] = useState<ContagionData | null>(null);
   const [sourceState, setSourceState] = useState<ContagionSourceState>("live");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [graphView, setGraphView] = useState<GraphView>("focus");
+  const [scope, setScope] = useState<ContagionScope>("all");
+  const [responseScope, setResponseScope] = useState<ContagionScope>("all");
+  const [scopeLabel, setScopeLabel] = useState<string>(getScopeLabel("all"));
+  const [marketDataSource, setMarketDataSource] = useState<string | null>(null);
 
   const loadContagion = useCallback(async () => {
     try {
@@ -332,16 +475,42 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
       setError(null);
       setSourceState("live");
       setStatusMessage(null);
-      const res = await fetch(buildApiUrl(`/api/v1/dashboard/${userId}/contagion`), { cache: "no-store" });
+      setWarnings([]);
+      setResponseScope(scope);
+      setScopeLabel(getScopeLabel(scope));
+      setMarketDataSource(null);
+
+      const query = new URLSearchParams({ scope });
+      const res = await fetch(buildApiUrl(`/api/v1/dashboard/${userId}/contagion?${query.toString()}`), { cache: "no-store" });
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const json = (await res.json()) as ContagionApiResponse;
+      const nextScope = isContagionScope(json.scope) ? json.scope : scope;
+      const nextScopeLabel =
+        typeof json.scope_label === "string" && json.scope_label.trim().length > 0
+          ? json.scope_label.trim()
+          : getScopeLabel(nextScope);
+
+      setResponseScope(nextScope);
+      setScopeLabel(nextScopeLabel);
+      setMarketDataSource(
+        typeof json.market_data_source === "string" && json.market_data_source.trim().length > 0
+          ? json.market_data_source.trim()
+          : null,
+      );
       setSourceState(json.source_state ?? "live");
       setStatusMessage(json.message ?? null);
+      setWarnings(
+        Array.isArray(json.warnings)
+          ? json.warnings.filter((warning): warning is string => typeof warning === "string" && warning.length > 0)
+          : [],
+      );
       if (json.data) {
         const normalized = normalizePayload(json.data as ContagionData);
         setData(normalized);
-        const defaultAsset = normalized.display?.default_selected_asset ?? normalized.summary?.systemic_asset ?? null;
-        setSelectedNodeId(defaultAsset);
+        setSelectedNodeId(current => {
+          if (current && normalized.nodes.some(n => n.id === current)) return current;
+          return normalized.display?.default_selected_asset ?? normalized.summary?.systemic_asset ?? null;
+        });
       } else {
         setData(null);
       }
@@ -349,11 +518,15 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
       console.error("Failed to fetch contagion data:", err);
       setSourceState("error");
       setStatusMessage(err instanceof Error ? err.message : "Failed to load contagion data");
+      setWarnings([]);
+      setResponseScope(scope);
+      setScopeLabel(getScopeLabel(scope));
+      setMarketDataSource(null);
       setError(err instanceof Error ? err.message : "Failed to load contagion data");
     } finally {
       setIsLoading(false);
     }
-  }, [userId]);
+  }, [userId, scope]);
 
   useEffect(() => { void loadContagion(); }, [loadContagion, refreshToken]);
 
@@ -363,6 +536,31 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     if (!data || !selectedNodeId) return null;
     return data.nodes.find((n) => n.id === selectedNodeId) || null;
   }, [data, selectedNodeId]);
+
+  const liveWarningItems = useMemo(() => {
+    const merged = [
+      statusMessage,
+      ...warnings,
+    ].filter((value): value is string => typeof value === "string" && value.length > 0);
+
+    return merged.filter((warning, index) => merged.indexOf(warning) === index);
+  }, [statusMessage, warnings]);
+
+  const activeScope = responseScope;
+  const activeScopeLabel = scopeLabel || getScopeLabel(activeScope);
+  const marketDataNote = useMemo(() => {
+    if (!marketDataSource) {
+      return null;
+    }
+
+    const normalized = marketDataSource
+      .split(/[_-\s]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ");
+
+    return `Market Data Source: ${normalized}`;
+  }, [marketDataSource]);
 
   // ── Loading ───────────────────────────────────────────────────────
   if (isLoading) {
@@ -375,32 +573,85 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
 
   // ── Error ─────────────────────────────────────────────────────────
   if (error || !data) {
+    const errorTitle =
+      activeScope === "all"
+        ? "Failed to Load Contagion Data"
+        : `Failed to Load ${activeScopeLabel} Contagion Data`;
+    const errorBody =
+      error ||
+      (activeScope === "all"
+        ? "RiskHub could not load the portfolio-wide contagion view."
+        : `RiskHub could not load the ${activeScopeLabel} contagion view.`);
+
     return (
-      <div className="glass-card rounded-2xl p-6 flex flex-col items-center justify-center min-h-[400px] border border-white/5 shadow-2xl">
-        <div style={{ textAlign: "center", maxWidth: 320 }}>
-          <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,180,171,0.1)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-            <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#ffb4ab" strokeWidth={2} strokeLinecap="round"><circle cx={12} cy={12} r={10} /><line x1={12} y1={8} x2={12} y2={12} /><line x1={12} y1={16} x2={12.01} y2={16} /></svg>
+      <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
+        {/* Same control row structure as all other fallback branches */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+          <div style={{ minWidth: 0 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: "#dae2fd", margin: 0, lineHeight: 1.3 }}>
+              Portfolio Contagion Map
+            </h3>
+            <p style={{ fontSize: 11, color: "#c3c5d7", margin: "2px 0 0", lineHeight: 1.3 }}>
+              {getScopeSubtitle(activeScope, activeScopeLabel)}
+            </p>
           </div>
-          <p style={{ fontSize: 14, fontWeight: 600, color: "#dae2fd", marginBottom: 8 }}>Failed to Load Contagion Data</p>
-          <p style={{ fontSize: 12, color: "#c3c5d7", marginBottom: 16 }}>{error || "An unexpected error occurred."}</p>
-          <button onClick={() => { void loadContagion(); }} style={{ padding: "8px 20px", borderRadius: 8, background: "rgba(26,86,219,0.15)", border: "1px solid rgba(26,86,219,0.3)", color: "#b5c4ff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Retry</button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
+            <ViewToggle view={graphView} onChange={setGraphView} disabled />
+            <ScopeToggle scope={scope} onChange={setScope} />
+          </div>
+        </div>
+        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ textAlign: "center", maxWidth: 320 }}>
+            <div style={{ width: 48, height: 48, borderRadius: "50%", background: "rgba(255,180,171,0.1)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="#ffb4ab" strokeWidth={2} strokeLinecap="round"><circle cx={12} cy={12} r={10} /><line x1={12} y1={8} x2={12} y2={12} /><line x1={12} y1={16} x2={12.01} y2={16} /></svg>
+            </div>
+            <p style={{ fontSize: 14, fontWeight: 600, color: "#dae2fd", marginBottom: 8 }}>{errorTitle}</p>
+            <p style={{ fontSize: 12, color: "#c3c5d7", marginBottom: 16 }}>{errorBody}</p>
+            <button onClick={() => { void loadContagion(); }} style={{ padding: "8px 20px", borderRadius: 8, background: "rgba(26,86,219,0.15)", border: "1px solid rgba(26,86,219,0.3)", color: "#b5c4ff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Retry</button>
+          </div>
         </div>
       </div>
     );
   }
 
   const { regime, summary, nodes, edges, clusters, display } = data;
-  const meaningfulNodes = nodes.filter((n) => n.weight_pct > 0.5);
+  // For scoped exchange views (binance / okx), the backend already pre-filters to
+  // that exchange's holdings, so a 0.5 % threshold can silently drop valid small
+  // positions and make a renderable 4-asset graph look like a concentration fallback.
+  // Threshold: 0 % in scoped mode (all backend nodes are intentional), 0.5 % in
+  // All-scope mode to filter out dust/stablecoin noise across exchanges.
+  const meaningfulThreshold = activeScope === "all" ? 0.5 : 0;
+  const meaningfulNodes = nodes.filter((n) => n.weight_pct > meaningfulThreshold);
+  const shouldShowLiveWarningBanner =
+    (sourceState === "live" || sourceState === "demo") &&
+    liveWarningItems.length > 0;
 
   // ── Source state fallbacks ─────────────────────────────────────────
   if (sourceState === "no_connection" || sourceState === "error") {
-    const title = sourceState === "no_connection" ? "Connect Binance Testnet to Generate This Map" : "Live Holdings Are Unavailable";
-    const body = statusMessage || (sourceState === "no_connection"
-      ? "Connect Binance Testnet and refresh the dashboard to calculate cross-asset contagion from backend-managed holdings."
-      : "RiskHub could not read live holdings for contagion analysis right now.");
+    const title = sourceState === "no_connection"
+      ? activeScope === "all"
+        ? "Connect an Exchange to Generate This Map"
+        : `Connect ${activeScopeLabel} to Generate This Map`
+      : "Live Holdings Are Unavailable";
+    const body = sourceState === "no_connection"
+      ? (activeScope === "all"
+          ? "Manage connections and refresh the dashboard to calculate a portfolio-wide contagion map from backend-managed holdings."
+          : `Make sure you have an active ${activeScopeLabel} connection to view this contagion scope.`)
+      : statusMessage || "RiskHub could not read live holdings for contagion analysis right now.";
     return (
       <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
-        <ModuleHeader regime={regime} generatedAt={data.generated_at} />
+        <ModuleHeader
+          regime={regime}
+          generatedAt={data.generated_at}
+          graphView={graphView}
+          onViewChange={setGraphView}
+          viewToggleDisabled
+          scope={scope}
+          scopeLabel={activeScopeLabel}
+          onScopeChange={setScope}
+          marketDataNote={marketDataNote}
+          showToggle
+        />
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}><ConcentrationFallback title={title} body={body} /></div>
       </div>
     );
@@ -409,11 +660,24 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   // ── < 2 meaningful assets ──────────────────────────────────────────
   if (meaningfulNodes.length < 2) {
     const fallbackBody = statusMessage || (sourceState === "insufficient_holdings"
-      ? "Contagion mapping needs at least two meaningful non-stable holdings."
+      ? activeScope === "all"
+        ? "Contagion mapping needs at least two meaningful non-stable holdings across active exchanges."
+        : `Contagion mapping needs at least two meaningful non-stable holdings in ${activeScopeLabel}.`
       : "Contagion mapping needs at least two meaningful holdings.");
     return (
       <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
-        <ModuleHeader regime={regime} generatedAt={data.generated_at} />
+        <ModuleHeader
+          regime={regime}
+          generatedAt={data.generated_at}
+          graphView={graphView}
+          onViewChange={setGraphView}
+          viewToggleDisabled
+          scope={scope}
+          scopeLabel={activeScopeLabel}
+          onScopeChange={setScope}
+          marketDataNote={marketDataNote}
+          showToggle
+        />
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}><ConcentrationFallback body={fallbackBody} /></div>
       </div>
     );
@@ -423,7 +687,18 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   if (edges.length === 0) {
     return (
       <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
-        <ModuleHeader regime={regime} generatedAt={data.generated_at} />
+        <ModuleHeader
+          regime={regime}
+          generatedAt={data.generated_at}
+          graphView={graphView}
+          onViewChange={setGraphView}
+          viewToggleDisabled
+          scope={scope}
+          scopeLabel={activeScopeLabel}
+          onScopeChange={setScope}
+          marketDataNote={marketDataNote}
+          showToggle
+        />
         <InsightStrip insight={summary.insight} />
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}><LowSignalFallback nodes={nodes} /></div>
       </div>
@@ -437,7 +712,24 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     if (pairEdge) {
       return (
         <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
-          <ModuleHeader regime={regime} generatedAt={data.generated_at} />
+          <ModuleHeader
+            regime={regime}
+            generatedAt={data.generated_at}
+            graphView={graphView}
+            onViewChange={setGraphView}
+            viewToggleDisabled
+            scope={scope}
+            scopeLabel={activeScopeLabel}
+            onScopeChange={setScope}
+            marketDataNote={marketDataNote}
+            showToggle
+          />
+          {shouldShowLiveWarningBanner ? (
+            <HoldingsWarningBanner
+              title="Live Holdings Warning"
+              warnings={liveWarningItems}
+            />
+          ) : null}
           <InsightStrip insight={summary.insight} />
           <SummaryRow summary={summary} clusters={clusters} />
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}><PairRiskFallback nodes={meaningfulNodes} edge={pairEdge} /></div>
@@ -447,7 +739,18 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     }
     return (
       <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
-        <ModuleHeader regime={regime} generatedAt={data.generated_at} />
+        <ModuleHeader
+          regime={regime}
+          generatedAt={data.generated_at}
+          graphView={graphView}
+          onViewChange={setGraphView}
+          viewToggleDisabled
+          scope={scope}
+          scopeLabel={activeScopeLabel}
+          onScopeChange={setScope}
+          marketDataNote={marketDataNote}
+          showToggle
+        />
         <InsightStrip insight={summary.insight} />
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}><LowSignalFallback nodes={nodes} /></div>
       </div>
@@ -465,8 +768,18 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
           generatedAt={data.generated_at}
           graphView={graphView}
           onViewChange={setGraphView}
+          scope={scope}
+          scopeLabel={activeScopeLabel}
+          onScopeChange={setScope}
+          marketDataNote={marketDataNote}
           showToggle
         />
+        {shouldShowLiveWarningBanner ? (
+          <HoldingsWarningBanner
+            title="Live Holdings Warning"
+            warnings={liveWarningItems}
+          />
+        ) : null}
         <InsightStrip insight={summary.insight} />
         <SummaryRow summary={summary} clusters={clusters} />
       </div>

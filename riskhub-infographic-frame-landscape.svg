@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="title desc">
+  <title id="title">RiskHub landscape infographic frame</title>
+  <desc id="desc">Landscape infographic frame for RiskHub with hero, problem, solution, feature grid, workflow, and call to action.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07101d"/>
+      <stop offset="52%" stop-color="#0b1326"/>
+      <stop offset="100%" stop-color="#121c2f"/>
+    </linearGradient>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#244da0" stop-opacity="0.96"/>
+      <stop offset="100%" stop-color="#5e6d91" stop-opacity="0.88"/>
+    </linearGradient>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1b2438"/>
+      <stop offset="100%" stop-color="#151d31"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#b5c4ff"/>
+      <stop offset="100%" stop-color="#2f6ef6"/>
+    </linearGradient>
+    <linearGradient id="warm" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ffb59a"/>
+      <stop offset="100%" stop-color="#ffb4ab"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="16" stdDeviation="24" flood-color="#030815" flood-opacity="0.5"/>
+    </filter>
+    <style>
+      .eyebrow { fill: #90a7e7; font: 600 18px 'Inter', 'Segoe UI', sans-serif; letter-spacing: 0.22em; text-transform: uppercase; }
+      .title { fill: #f3f6ff; font: 800 64px 'Inter', 'Segoe UI', sans-serif; }
+      .subtitle { fill: #c3cbdd; font: 400 24px 'Inter', 'Segoe UI', sans-serif; }
+      .section { fill: #eff4ff; font: 700 28px 'Inter', 'Segoe UI', sans-serif; }
+      .cardTitle { fill: #e7edff; font: 700 22px 'Inter', 'Segoe UI', sans-serif; }
+      .body { fill: #c2cadb; font: 400 19px 'Inter', 'Segoe UI', sans-serif; }
+      .bodySmall { fill: #abb7cc; font: 400 16px 'Inter', 'Segoe UI', sans-serif; }
+      .label { fill: #9fb5ea; font: 600 13px 'Inter', 'Segoe UI', sans-serif; letter-spacing: 0.16em; text-transform: uppercase; }
+      .mono { fill: #dae2fd; font: 700 18px 'JetBrains Mono', 'Consolas', monospace; }
+      .cta { fill: #08111f; font: 700 20px 'Inter', 'Segoe UI', sans-serif; }
+    </style>
+  </defs>
+
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <circle cx="180" cy="170" r="260" fill="#14315f" opacity="0.18"/>
+  <circle cx="1660" cy="160" r="260" fill="#153b72" opacity="0.14"/>
+  <circle cx="1720" cy="950" r="260" fill="#6e2911" opacity="0.08"/>
+  <rect x="40" y="32" width="1840" height="1016" rx="34" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.06)"/>
+
+  <g filter="url(#softShadow)">
+    <rect x="72" y="56" width="1776" height="210" rx="28" fill="url(#panel)" stroke="rgba(181,196,255,0.16)"/>
+    <rect x="72" y="56" width="1776" height="210" rx="28" fill="url(#hero)"/>
+    <text x="116" y="108" class="eyebrow">Hackathon Fintech · Blockchain</text>
+    <text x="116" y="176" class="title">RiskHub</text>
+    <text x="116" y="214" class="subtitle">Nền tảng quản trị rủi ro giao dịch crypto đa sàn, chủ động cảnh báo hành vi và contagion danh mục.</text>
+    <text x="116" y="246" class="body">Giúp trader nhìn thấy rủi ro tổng thể, phát hiện giao dịch cảm xúc sớm và ra quyết định kỷ luật hơn.</text>
+
+    <rect x="1498" y="86" width="286" height="150" rx="22" fill="#0b1326" stroke="rgba(255,255,255,0.08)"/>
+    <text x="1530" y="122" class="label">MVP Snapshot</text>
+    <text x="1530" y="160" class="mono">Binance + OKX</text>
+    <text x="1530" y="190" class="bodySmall">Read-only connection</text>
+    <text x="1530" y="218" class="mono">Alerts + Contagion</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="72" y="300" width="560" height="180" rx="24" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+    <text x="104" y="348" class="section">1. Vấn đề</text>
+    <circle cx="114" cy="388" r="5" fill="#ffb59a"/>
+    <text x="136" y="395" class="body">Tài sản phân tán trên nhiều sàn, khó nhìn rủi ro tổng thể.</text>
+    <circle cx="114" cy="430" r="5" fill="#ffb59a"/>
+    <text x="136" y="437" class="body">Trader dễ rơi vào revenge trading, overtrading và đòn bẩy quá mức.</text>
+    <circle cx="114" cy="472" r="5" fill="#ffb59a"/>
+    <text x="136" y="479" class="body">Thiếu công cụ cảnh báo sớm trước khi drawdown lan rộng.</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="656" y="300" width="672" height="180" rx="24" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+    <text x="688" y="348" class="section">2. Giải pháp</text>
+    <rect x="688" y="374" width="608" height="34" rx="12" fill="rgba(26,86,219,0.12)" stroke="rgba(181,196,255,0.12)"/>
+    <text x="708" y="397" class="body">Multi-exchange visibility trên một dashboard duy nhất</text>
+    <rect x="688" y="420" width="608" height="34" rx="12" fill="rgba(26,86,219,0.10)" stroke="rgba(181,196,255,0.10)"/>
+    <text x="708" y="443" class="body">Behavioral Quant Engine đo discipline score và risk metrics</text>
+    <rect x="688" y="466" width="608" height="34" rx="12" fill="rgba(255,181,154,0.10)" stroke="rgba(255,181,154,0.10)"/>
+    <text x="708" y="489" class="body">Contagion map trực quan hóa nguồn rủi ro hệ thống trong danh mục</text>
+  </g>
+
+  <text x="72" y="534" class="section">3. Tính năng nổi bật của MVP</text>
+
+  <g filter="url(#softShadow)">
+    <rect x="72" y="556" width="608" height="182" rx="24" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+    <text x="102" y="600" class="cardTitle">Manage Connections</text>
+    <text x="102" y="630" class="bodySmall">Kết nối Binance / OKX futures theo cơ chế read-only, backend quản lý và đồng bộ dữ liệu.</text>
+    <rect x="102" y="654" width="548" height="58" rx="16" fill="#0b1326" stroke="rgba(255,255,255,0.08)"/>
+    <rect x="124" y="674" width="178" height="12" rx="6" fill="rgba(181,196,255,0.22)"/>
+    <rect x="124" y="696" width="252" height="10" rx="5" fill="rgba(255,255,255,0.08)"/>
+    <rect x="508" y="671" width="108" height="28" rx="14" fill="rgba(47,110,246,0.24)"/>
+    <text x="529" y="691" class="label" style="letter-spacing:0.08em;">Connect</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="720" y="556" width="608" height="182" rx="24" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+    <text x="750" y="600" class="cardTitle">Risk Dashboard</text>
+    <text x="750" y="630" class="bodySmall">Portfolio value, Net PnL, Discipline Score, Max Drawdown.</text>
+    <rect x="750" y="654" width="548" height="58" rx="16" fill="#0b1326" stroke="rgba(255,255,255,0.08)"/>
+    <circle cx="796" cy="683" r="22" fill="none" stroke="url(#accent)" stroke-width="6"/>
+    <text x="781" y="690" class="mono">92</text>
+    <rect x="844" y="676" width="120" height="12" rx="6" fill="rgba(255,255,255,0.14)"/>
+    <rect x="844" y="696" width="170" height="10" rx="5" fill="rgba(255,255,255,0.08)"/>
+    <text x="1148" y="692" class="mono">+$1.56M</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="72" y="764" width="608" height="182" rx="24" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+    <text x="102" y="808" class="cardTitle">Live Alerts</text>
+    <text x="102" y="838" class="bodySmall">Cảnh báo hành vi giao dịch và rủi ro theo thời gian thực.</text>
+    <rect x="102" y="862" width="548" height="58" rx="16" fill="#0b1326" stroke="rgba(255,255,255,0.08)"/>
+    <rect x="124" y="878" width="8" height="34" rx="4" fill="url(#warm)"/>
+    <rect x="150" y="882" width="202" height="12" rx="6" fill="rgba(255,255,255,0.14)"/>
+    <rect x="150" y="902" width="266" height="10" rx="5" fill="rgba(255,255,255,0.08)"/>
+    <rect x="560" y="880" width="56" height="18" rx="9" fill="rgba(255,181,154,0.18)"/>
+    <text x="573" y="894" class="label" style="letter-spacing:0.08em;">Live</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="720" y="764" width="608" height="182" rx="24" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+    <text x="750" y="808" class="cardTitle">Portfolio Contagion Map</text>
+    <text x="750" y="838" class="bodySmall">Systemic asset, top risk pair, cluster risk và focus view.</text>
+    <rect x="750" y="862" width="548" height="58" rx="16" fill="#091122" stroke="rgba(255,255,255,0.08)"/>
+    <circle cx="930" cy="891" r="26" fill="#31394d" stroke="#ffb4ab" stroke-width="4"/>
+    <circle cx="870" cy="876" r="14" fill="#31394d" stroke="#ffb59a" stroke-width="3"/>
+    <circle cx="994" cy="874" r="13" fill="#31394d" stroke="#ffb59a" stroke-width="3"/>
+    <circle cx="990" cy="910" r="13" fill="#31394d" stroke="#ffb59a" stroke-width="3"/>
+    <line x1="883" y1="880" x2="907" y2="886" stroke="#ffb4ab" stroke-width="4" stroke-linecap="round"/>
+    <line x1="954" y1="882" x2="981" y2="878" stroke="#ffb4ab" stroke-width="4" stroke-linecap="round"/>
+    <line x1="952" y1="898" x2="978" y2="906" stroke="#ffb4ab" stroke-width="4" stroke-linecap="round"/>
+    <text x="915" y="898" class="mono">BTC</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="1368" y="300" width="480" height="350" rx="24" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+    <text x="1400" y="344" class="section">4. Luồng hoạt động</text>
+    <circle cx="1438" cy="432" r="22" fill="url(#accent)"/>
+    <circle cx="1546" cy="432" r="22" fill="url(#accent)"/>
+    <circle cx="1654" cy="432" r="22" fill="url(#accent)"/>
+    <circle cx="1762" cy="432" r="22" fill="url(#accent)"/>
+    <text x="1431" y="440" class="cta">1</text>
+    <text x="1539" y="440" class="cta">2</text>
+    <text x="1647" y="440" class="cta">3</text>
+    <text x="1755" y="440" class="cta">4</text>
+    <line x1="1460" y1="432" x2="1524" y2="432" stroke="rgba(181,196,255,0.40)" stroke-width="4" stroke-linecap="round"/>
+    <line x1="1568" y1="432" x2="1632" y2="432" stroke="rgba(181,196,255,0.40)" stroke-width="4" stroke-linecap="round"/>
+    <line x1="1676" y1="432" x2="1740" y2="432" stroke="rgba(181,196,255,0.40)" stroke-width="4" stroke-linecap="round"/>
+    <text x="1404" y="388" class="bodySmall">Kết nối</text>
+    <text x="1512" y="388" class="bodySmall">Đồng bộ</text>
+    <text x="1616" y="388" class="bodySmall">Phân tích</text>
+    <text x="1726" y="388" class="bodySmall">Cảnh báo</text>
+    <text x="1400" y="500" class="bodySmall">Binance / OKX</text>
+    <text x="1510" y="500" class="bodySmall">Trades, positions</text>
+    <text x="1608" y="500" class="bodySmall">Quant + contagion</text>
+    <text x="1718" y="500" class="bodySmall">Dashboard live</text>
+
+    <text x="1400" y="570" class="section">5. Giá trị</text>
+    <circle cx="1410" cy="608" r="5" fill="#a8efb4"/>
+    <text x="1432" y="615" class="bodySmall">Giảm mù rủi ro khi giao dịch trên nhiều sàn.</text>
+    <circle cx="1410" cy="642" r="5" fill="#a8efb4"/>
+    <text x="1432" y="649" class="bodySmall">Phát hiện sớm hành vi giao dịch cảm xúc.</text>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <rect x="1368" y="676" width="480" height="270" rx="24" fill="url(#panel)" stroke="rgba(255,255,255,0.08)"/>
+    <text x="1400" y="720" class="section">6. CTA</text>
+    <text x="1400" y="760" class="body">RiskHub biến dữ liệu giao dịch thành góc nhìn rủi ro có thể hành động.</text>
+    <rect x="1400" y="800" width="384" height="106" rx="24" fill="url(#accent)"/>
+    <text x="1432" y="846" class="cta">Binh chon cho RiskHub</text>
+    <text x="1432" y="878" class="cardTitle" fill="#08111f">Smart risk layer for crypto traders</text>
+  </g>
+</svg>

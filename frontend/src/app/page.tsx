@@ -5,29 +5,28 @@ import { startTransition, useCallback, useEffect, useState } from "react";
 import { Toaster, toast } from "sonner";
 import { Sidebar } from "../components/Sidebar";
 import { Navbar } from "../components/Navbar";
-import { PortfolioCard } from "../components/PortfolioCard";
+import { PortfolioCard, type ExchangeData } from "../components/PortfolioCard";
 import { AlertsPanel, AlertData } from "../components/AlertsPanel";
 import { PositionData, OpenPositions } from "../components/OpenPositions";
-import { ConnectBinanceTestnetModal } from "../components/ConnectBinanceTestnetModal";
+import {
+  ManageConnectionsModal,
+  type ExchangeConnection,
+  type ManageConnectionPayload,
+} from "../components/ManageConnectionsModal";
 import { useRiskWebSocket } from "../hooks/useRiskWebSocket";
+import { getExchangeMeta } from "../lib/exchanges";
 import { buildApiUrl, DEFAULT_USER_ID } from "../lib/riskhub-api";
 
 interface DashboardMetrics {
-  by_exchange?: {
-    exchange_id: string;
-    trade_count: number;
-    win_rate_pct: string;
-    avg_leverage: string;
-    net_pnl_usd: string;
-  }[];
+  by_exchange?: ExchangeData[];
   discipline_score?: {
     total?: number;
     grade?: string;
   };
   max_drawdown?: {
-    value_pct?: string;
+    value_pct?: string | number;
   };
-  net_pnl_usd?: string;
+  net_pnl_usd?: string | number;
 }
 
 interface DashboardOverview {
@@ -37,18 +36,8 @@ interface DashboardOverview {
   discipline_score: number;
   discipline_grade: string;
   max_drawdown_pct: number;
-  exchange_connections: {
-    exchange_id: string;
-    label: string;
-    environment: string;
-    market_type: string;
-    permissions_verified: string[];
-    is_active: boolean;
-    last_sync_at: string | null;
-    last_sync_status: string;
-    last_sync_error: string | null;
-    added_at: string | null;
-  }[];
+  metrics_by_exchange?: ExchangeData[];
+  exchange_connections: ExchangeConnection[];
   last_refresh_at: string | null;
   data_freshness: {
     state: string;
@@ -68,6 +57,7 @@ interface DashboardRefreshResponse {
 
 type PositionsSourceState =
   | "live"
+  | "partial"
   | "no_connection"
   | "no_open_positions"
   | "error";
@@ -76,6 +66,7 @@ interface LivePositionsResponse {
   positions?: PositionData[];
   source_state?: PositionsSourceState;
   message?: string | null;
+  warnings?: string[];
 }
 
 interface ApiAlert {
@@ -173,7 +164,7 @@ function DrawdownCard({
   hasMetrics,
   isConnected,
 }: {
-  drawdownPct: string;
+  drawdownPct: string | number;
   hasMetrics: boolean;
   isConnected: boolean;
 }) {
@@ -189,7 +180,7 @@ function DrawdownCard({
         <div>
           <div className="text-xs font-semibold text-text-primary tracking-wide">Max Drawdown</div>
           <span className="font-mono text-lg font-bold tracking-tight text-danger">
-            -{parseFloat(drawdownPct || "0").toFixed(2)}%
+            -{parseFloat(String(drawdownPct || "0")).toFixed(2)}%
           </span>
           <div className="text-[10px] text-text-secondary uppercase tracking-widest">
             {hasMetrics ? "Peak-to-Trough" : isConnected ? "Awaiting trade sync" : "No synced data"}
@@ -213,12 +204,12 @@ export default function Dashboard() {
   const [positionsSourceState, setPositionsSourceState] =
     useState<PositionsSourceState>("live");
   const [positionsStatusMessage, setPositionsStatusMessage] = useState<string | null>(null);
+  const [positionsWarnings, setPositionsWarnings] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPositionsLoading, setIsPositionsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
-  const [isConnecting, setIsConnecting] = useState(false);
-  const [connectError, setConnectError] = useState<string | null>(null);
+  const [isManageConnectionsOpen, setIsManageConnectionsOpen] = useState(false);
+  const [isSavingConnection, setIsSavingConnection] = useState(false);
   const [contagionRefreshToken, setContagionRefreshToken] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -276,6 +267,7 @@ export default function Dashboard() {
       let positionsPayload: PositionData[] = [];
       let nextPositionsSourceState: PositionsSourceState = "live";
       let nextPositionsStatusMessage: string | null = null;
+      let nextPositionsWarnings: string[] = [];
       if (positionsRes.ok) {
         const positionsJson = (await positionsRes.json()) as LivePositionsResponse;
         positionsPayload = Array.isArray(positionsJson.positions)
@@ -283,6 +275,9 @@ export default function Dashboard() {
           : [];
         nextPositionsSourceState = positionsJson.source_state ?? "live";
         nextPositionsStatusMessage = positionsJson.message ?? null;
+        nextPositionsWarnings = Array.isArray(positionsJson.warnings)
+          ? positionsJson.warnings.filter((warning): warning is string => typeof warning === "string" && warning.length > 0)
+          : [];
       } else {
         console.error("Positions fetch failed:", await readErrorMessage(positionsRes));
       }
@@ -295,6 +290,7 @@ export default function Dashboard() {
         setPositions(positionsPayload);
         setPositionsSourceState(nextPositionsSourceState);
         setPositionsStatusMessage(nextPositionsStatusMessage);
+        setPositionsWarnings(nextPositionsWarnings);
       });
     } catch (error) {
       console.error("Dashboard data fetch error:", error);
@@ -307,6 +303,7 @@ export default function Dashboard() {
         setPositions([]);
         setPositionsSourceState("error");
         setPositionsStatusMessage("Failed to load dashboard data.");
+        setPositionsWarnings([]);
       });
     } finally {
       if (showSkeleton) {
@@ -370,33 +367,33 @@ export default function Dashboard() {
     }
   }, [loadDashboardData, userId]);
 
-  const handleConnectSubmit = useCallback(async (payload: {
-    apiKey: string;
-    apiSecret: string;
-    label: string;
-  }) => {
-    setIsConnecting(true);
-    setConnectError(null);
+  const handleConnectionSubmit = useCallback(async (payload: ManageConnectionPayload) => {
+    setIsSavingConnection(true);
 
     try {
       const connectResponse = await fetch(
-        buildApiUrl(`/api/v1/exchange-keys/${userId}/binance-testnet/connect`),
+        buildApiUrl(`/api/v1/exchange-keys/${userId}/connect`),
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            exchange_id: payload.exchangeId,
+            environment: payload.environment,
+            market_type: payload.marketType,
+            label: payload.label,
             api_key: payload.apiKey,
             api_secret: payload.apiSecret,
-            label: payload.label,
+            passphrase: payload.passphrase,
           }),
-        }
+        },
       );
 
       if (!connectResponse.ok) {
         throw new Error(await readErrorMessage(connectResponse));
       }
 
-      setIsConnectModalOpen(false);
+      const exchangeMeta = getExchangeMeta(payload.exchangeId);
+
       try {
         const refreshResponse = await fetch(buildApiUrl(`/api/v1/dashboard/${userId}/refresh`), {
           method: "POST",
@@ -410,8 +407,8 @@ export default function Dashboard() {
 
         toast.success(
           refreshPayload.status === "partial"
-            ? "Binance Testnet connected. Data refreshed with warnings."
-            : "Binance Testnet connected."
+            ? `${exchangeMeta.label} connection saved. Portfolio refreshed with warnings.`
+            : `${exchangeMeta.label} connection saved.`,
         );
 
         if (refreshPayload.warnings.length > 0) {
@@ -420,8 +417,8 @@ export default function Dashboard() {
           });
         }
       } catch (refreshError) {
-        console.error("Initial dashboard refresh failed after connect:", refreshError);
-        toast.message("Binance Testnet connected. Initial refresh needs attention.", {
+        console.error("Initial dashboard refresh failed after connection save:", refreshError);
+        toast.message(`${exchangeMeta.label} connection saved. Initial refresh needs attention.`, {
           description:
             refreshError instanceof Error
               ? refreshError.message
@@ -432,14 +429,14 @@ export default function Dashboard() {
       await loadDashboardData();
       setContagionRefreshToken((currentToken) => currentToken + 1);
     } catch (error) {
-      console.error("Binance Testnet connect failed:", error);
-      setConnectError(
+      console.error("Exchange connection save failed:", error);
+      throw (
         error instanceof Error
-          ? error.message
-          : "Failed to connect Binance Testnet."
+          ? error
+          : new Error("Failed to save the exchange connection.")
       );
     } finally {
-      setIsConnecting(false);
+      setIsSavingConnection(false);
     }
   }, [loadDashboardData, userId]);
 
@@ -447,6 +444,10 @@ export default function Dashboard() {
     overview?.has_configured_exchange_connection ??
     Boolean(overview?.exchange_connections?.some((connection) => connection.is_active));
   const overviewWarnings = overview?.warnings ?? [];
+  const exchangeBreakdown = metrics?.by_exchange ?? overview?.metrics_by_exchange ?? [];
+  const activeExchangeCount =
+    overview?.exchange_connections?.filter((connection) => connection.is_active).length ?? 0;
+  const configuredExchangeCount = overview?.exchange_connections?.length ?? 0;
 
   return (
     <div className="flex h-screen overflow-hidden bg-main-bg">
@@ -461,17 +462,19 @@ export default function Dashboard() {
           },
         }}
       />
-      <ConnectBinanceTestnetModal
-        isOpen={isConnectModalOpen}
-        isSubmitting={isConnecting}
-        errorMessage={connectError}
+      <ManageConnectionsModal
+        isOpen={isManageConnectionsOpen}
+        userId={userId}
+        initialConnections={overview?.exchange_connections ?? []}
+        isSubmitting={isSavingConnection}
+        isRefreshing={isRefreshing}
         onClose={() => {
-          if (!isConnecting) {
-            setIsConnectModalOpen(false);
-            setConnectError(null);
+          if (!isSavingConnection) {
+            setIsManageConnectionsOpen(false);
           }
         }}
-        onSubmit={handleConnectSubmit}
+        onSubmit={handleConnectionSubmit}
+        onRefreshData={handleRefresh}
       />
       <Sidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed((prev) => !prev)} />
       <div className="relative flex flex-1 flex-col overflow-hidden">
@@ -480,13 +483,14 @@ export default function Dashboard() {
           totalPortfolioValue={overview?.total_portfolio_value ?? 0}
           lastRefreshAt={overview?.last_refresh_at ?? null}
           hasLiveExchangeConnection={overview?.has_live_exchange_connection ?? false}
+          activeExchangeCount={activeExchangeCount}
+          configuredExchangeCount={configuredExchangeCount}
           statusMessage={overviewWarnings[0] ?? null}
           unreadAlertCount={unreadAlertCount}
           isRefreshing={isRefreshing}
           onRefresh={handleRefresh}
-          onOpenConnect={() => {
-            setConnectError(null);
-            setIsConnectModalOpen(true);
+          onOpenConnections={() => {
+            setIsManageConnectionsOpen(true);
           }}
         />
         <main className="relative z-0 flex-1 overflow-y-auto p-4 md:p-5 lg:p-6">
@@ -499,7 +503,7 @@ export default function Dashboard() {
           {/* ── Compact Metrics Strip ─── */}
           <div className="metrics-strip">
             <PortfolioCard
-              exchanges={metrics?.by_exchange || []}
+              exchanges={exchangeBreakdown}
               totalNetPnl={netPnlUsd}
               isConnected={hasConfiguredConnection}
             />
@@ -535,6 +539,7 @@ export default function Dashboard() {
                 isConnected={hasConfiguredConnection}
                 sourceState={positionsSourceState}
                 statusMessage={positionsStatusMessage}
+                warnings={positionsWarnings}
               />
               <AlertsPanel alerts={alerts} />
             </div>

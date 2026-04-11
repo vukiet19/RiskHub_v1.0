@@ -104,19 +104,13 @@ def _latest_close(candles: list[list[float]]) -> Optional[float]:
     return _safe_float(last[4])
 
 
-async def _get_live_exchange_context(user_id: ObjectId) -> dict[str, Any]:
+async def _get_live_exchange_context(user_id: ObjectId, scope: str = "all") -> dict[str, Any]:
     """
-    Return active exchange credentials plus connection warnings that are
-    usable by server-side dashboard loaders.
+    Load all active credentials for a user and decrypt them,
+    returning connection status and warnings.
+    If scope is not "all", filters by the specified exchange_id.
     """
-    try:
-        key_docs = await get_user_exchange_keys(user_id)
-    except LookupError:
-        return {
-            "credentials": [],
-            "warnings": [],
-            "has_configured_connection": False,
-        }
+    key_docs = await get_user_exchange_keys(user_id)
 
     credentials: list[dict[str, Any]] = []
     warnings: list[str] = []
@@ -124,6 +118,10 @@ async def _get_live_exchange_context(user_id: ObjectId) -> dict[str, Any]:
 
     for key_doc in key_docs:
         if not key_doc.get("is_active", True):
+            continue
+            
+        exchange_id = key_doc.get("exchange_id")
+        if scope != "all" and exchange_id != scope:
             continue
 
         has_configured_connection = True
@@ -184,12 +182,12 @@ def _normalise_position_snapshot(position: dict[str, Any], exchange_id: str) -> 
     }
 
 
-async def _load_live_holdings_snapshot(user_id: ObjectId) -> dict[str, Any]:
+async def _load_live_holdings_snapshot(user_id: ObjectId, scope: str = "all") -> dict[str, Any]:
     """
     Best-effort live holdings loader using server-side exchange access.
     Returns holdings plus connection-state metadata for dashboard messaging.
     """
-    context = await _get_live_exchange_context(user_id)
+    context = await _get_live_exchange_context(user_id, scope=scope)
     credentials = context["credentials"]
     warnings = list(context["warnings"])
     if not credentials:
@@ -447,6 +445,16 @@ async def _build_dashboard_overview(user_id: ObjectId) -> dict[str, Any]:
             _safe_float(metrics_doc.get("max_drawdown", {}).get("value_pct")) if metrics_doc else 0.0,
             2,
         ),
+        "metrics_by_exchange": [
+            {
+                "exchange_id": str(ex.get("exchange_id", "")),
+                "trade_count": int(ex.get("trade_count", 0)),
+                "win_rate_pct": float(str(ex.get("win_rate_pct", "0"))),
+                "avg_leverage": float(str(ex.get("avg_leverage", "0"))),
+                "net_pnl_usd": float(str(ex.get("net_pnl_usd", "0"))),
+            }
+            for ex in (metrics_doc.get("by_exchange", []) if metrics_doc else [])
+        ],
         "exchange_connections": [
             sanitize_exchange_key_document(key_doc)
             for key_doc in key_docs
@@ -478,123 +486,115 @@ def _determine_sync_status_for_error(error: Exception) -> str:
 
 async def _refresh_dashboard_from_stored_key(user_id: ObjectId) -> dict[str, Any]:
     started_at = datetime.now(tz=timezone.utc)
-    key_doc = await get_active_exchange_key(
-        user_id,
-        exchange_id="binance",
-        environment="testnet",
-        market_type="futures",
-    )
-    if key_doc is None:
-        key_doc = await get_active_exchange_key(
-            user_id,
-            exchange_id="binance",
-            environment="testnet",
-        )
-    if key_doc is None:
+    key_docs = await get_user_exchange_keys(user_id)
+    active_keys = [k for k in key_docs if k.get("is_active", True)]
+
+    if not active_keys:
         raise HTTPException(
             status_code=404,
-            detail="No active Binance Testnet connection found for this user.",
+            detail="No active exchange connections found for this user.",
         )
 
-    try:
-        credential = decrypt_exchange_key_document(key_doc)
-        live_overview = await fetch_account_overview(
-            exchange_id=credential["exchange_id"],
-            api_key=credential["api_key"],
-            api_secret=credential["api_secret"],
-            passphrase=credential.get("passphrase"),
-            testnet=credential["testnet"],
-            market_type=credential.get("market_type", "futures"),
-        )
-        trade_sync = await fetch_and_sync_trades(
-            user_id=user_id,
-            exchange_id=credential["exchange_id"],
-            api_key=credential["api_key"],
-            api_secret=credential["api_secret"],
-            passphrase=credential.get("passphrase"),
-            testnet=credential["testnet"],
-        )
-        engine_result = await run_quant_engine(user_id)
-        finished_at = datetime.now(tz=timezone.utc)
+    results = []
+    warnings = []
+    total_portfolio_value = 0.0
+    total_unrealized_pnl = 0.0
+    positions_count = 0
+    balances_count = 0
+    
+    trade_sync_results = []
 
-        warnings = list(live_overview.get("warnings", []))
-        if engine_result.get("status") == "no_data":
-            warnings.append(engine_result.get("message", "No trades were available for risk metrics."))
+    for key_doc in active_keys:
+        exchange_id = key_doc.get("exchange_id", "unknown")
+        try:
+            credential = decrypt_exchange_key_document(key_doc)
+            live_overview = await fetch_account_overview(
+                exchange_id=credential["exchange_id"],
+                api_key=credential["api_key"],
+                api_secret=credential["api_secret"],
+                passphrase=credential.get("passphrase"),
+                testnet=credential.get("testnet", False),
+                market_type=credential.get("market_type", "futures"),
+            )
+            trade_sync = await fetch_and_sync_trades(
+                user_id=user_id,
+                exchange_id=credential["exchange_id"],
+                api_key=credential["api_key"],
+                api_secret=credential["api_secret"],
+                passphrase=credential.get("passphrase"),
+                testnet=credential.get("testnet", False),
+                market_type=credential.get("market_type", "futures"),
+            )
 
-        updated_key = await update_exchange_key_sync_status(
-            user_id,
-            exchange_id=credential["exchange_id"],
-            environment=credential.get("environment", "testnet"),
-            market_type=credential.get("market_type", "futures"),
-            last_sync_status="ok",
-            last_sync_error=None,
-            last_sync_at=finished_at,
-        )
+            ex_warnings = live_overview.get("warnings", [])
+            warnings.extend([f"[{exchange_id}] {w}" for w in ex_warnings])
 
-        return {
-            "status": "partial" if warnings else "ok",
-            "started_at": started_at.isoformat(),
-            "finished_at": finished_at.isoformat(),
-            "exchange_connection": sanitize_exchange_key_document(updated_key or key_doc),
-            "trade_sync": trade_sync,
-            "positions_count": int(live_overview.get("positions_count", 0)),
-            "balances_count": int(live_overview.get("balances_count", 0)),
-            "account_overview": {
-                "total_portfolio_value": round(
-                    _safe_float(live_overview.get("total_portfolio_value_usd")),
-                    2,
-                ),
-                "total_unrealized_pnl": round(
-                    _safe_float(live_overview.get("total_unrealized_pnl_usd")),
-                    2,
-                ),
-            },
-            "engine_status": engine_result.get("status", "error"),
-            "warnings": warnings,
-        }
-    except EncryptionConfigError as e:
-        await update_exchange_key_sync_status(
-            user_id,
-            exchange_id=key_doc.get("exchange_id", "binance"),
-            environment=key_doc.get("environment", "testnet"),
-            market_type=key_doc.get("market_type", "futures"),
-            last_sync_status="error",
-            last_sync_error="Server decryption is not configured.",
-            last_sync_at=datetime.now(tz=timezone.utc),
-        )
-        raise HTTPException(
-            status_code=503,
-            detail="Server decryption is not configured.",
-        ) from e
-    except ValueError as e:
-        await update_exchange_key_sync_status(
-            user_id,
-            exchange_id=key_doc.get("exchange_id", "binance"),
-            environment=key_doc.get("environment", "testnet"),
-            market_type=key_doc.get("market_type", "futures"),
-            last_sync_status="error",
-            last_sync_error=str(e),
-            last_sync_at=datetime.now(tz=timezone.utc),
-        )
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except HTTPException:
-        raise
-    except Exception as e:
-        await update_exchange_key_sync_status(
-            user_id,
-            exchange_id=key_doc.get("exchange_id", "binance"),
-            environment=key_doc.get("environment", "testnet"),
-            market_type=key_doc.get("market_type", "futures"),
-            last_sync_status=_determine_sync_status_for_error(e),
-            last_sync_error=str(e),
-            last_sync_at=datetime.now(tz=timezone.utc),
-        )
-        logger.exception("Dashboard refresh failed for user %s", user_id)
-        raise HTTPException(
-            status_code=502,
-            detail="Dashboard refresh failed while reading Binance Testnet data.",
-        ) from e
+            total_portfolio_value += _safe_float(live_overview.get("total_portfolio_value_usd"))
+            total_unrealized_pnl += _safe_float(live_overview.get("total_unrealized_pnl_usd"))
+            positions_count += int(live_overview.get("positions_count", 0))
+            balances_count += int(live_overview.get("balances_count", 0))
 
+            trade_sync_results.append(trade_sync)
+
+            await update_exchange_key_sync_status(
+                user_id,
+                exchange_id=credential["exchange_id"],
+                environment=credential.get("environment", "mainnet"),
+                market_type=credential.get("market_type", "futures"),
+                last_sync_status="ok",
+                last_sync_error=None,
+                last_sync_at=datetime.now(tz=timezone.utc),
+            )
+
+            results.append({"exchange_id": exchange_id, "status": "ok"})
+
+        except EncryptionConfigError as e:
+            warnings.append(f"[{exchange_id}] Server decryption is not configured.")
+            results.append({"exchange_id": exchange_id, "status": "error", "error": "Server decryption is not configured."})
+            await update_exchange_key_sync_status(
+                user_id,
+                exchange_id=exchange_id,
+                environment=key_doc.get("environment", "mainnet"),
+                market_type=key_doc.get("market_type", "futures"),
+                last_sync_status="error",
+                last_sync_error="Server decryption is not configured.",
+                last_sync_at=datetime.now(tz=timezone.utc),
+            )
+        except Exception as e:
+            msg = str(e)
+            warnings.append(f"[{exchange_id}] Sync failed: {msg}")
+            results.append({"exchange_id": exchange_id, "status": "error", "error": msg})
+            await update_exchange_key_sync_status(
+                user_id,
+                exchange_id=exchange_id,
+                environment=key_doc.get("environment", "mainnet"),
+                market_type=key_doc.get("market_type", "futures"),
+                last_sync_status=_determine_sync_status_for_error(e),
+                last_sync_error=msg,
+                last_sync_at=datetime.now(tz=timezone.utc),
+            )
+
+    engine_result = await run_quant_engine(user_id)
+    if engine_result.get("status") == "no_data":
+        warnings.append(engine_result.get("message", "No trades were available for risk metrics."))
+
+    finished_at = datetime.now(tz=timezone.utc)
+    all_ok = all(r.get("status") == "ok" for r in results)
+
+    return {
+        "status": "partial" if (warnings or not all_ok) else "ok",
+        "results": results,
+        "started_at": started_at.isoformat(),
+        "finished_at": finished_at.isoformat(),
+        "warnings": warnings,
+        "positions_count": positions_count,
+        "balances_count": balances_count,
+        "account_overview": {
+            "total_portfolio_value": round(total_portfolio_value, 2),
+            "total_unrealized_pnl": round(total_unrealized_pnl, 2),
+        },
+        "engine_status": engine_result.get("status", "error"),
+    }
 
 @router.get("/{user_id}/metrics")
 async def get_latest_metrics(user_id: str):
@@ -750,13 +750,16 @@ async def get_live_positions(user_id: str):
     message: Optional[str] = None
     if not snapshot["has_configured_connection"]:
         source_state = "no_connection"
-        message = "Connect Binance Testnet to load live positions."
+        message = "Manage connections to load live positions."
     elif snapshot["warnings"] and not positions:
         source_state = "error"
         message = snapshot["warnings"][0]
+    elif snapshot["warnings"] and positions:
+        source_state = "partial"
+        message = "Partial positions data loaded. Some connections failed."
     elif not positions:
         source_state = "no_open_positions"
-        message = "No open futures positions were found on Binance Testnet."
+        message = "No live positions were found across active exchanges."
 
     return {
         "status": "ok",
@@ -785,7 +788,7 @@ async def get_dashboard_overview(user_id: str):
 @router.post("/{user_id}/refresh")
 async def refresh_dashboard(user_id: str):
     """
-    Refresh dashboard-ready data using the stored active Binance Testnet key.
+    Refresh dashboard-ready data using the stored active exchange keys.
     """
     uid = _parse_user_object_id(user_id)
 
@@ -900,6 +903,7 @@ async def get_contagion_graph_legacy(
 async def get_contagion_graph(
     user_id: str,
     demo: bool = Query(False, description="If true, use demo holdings when live holdings are unavailable"),
+    scope: str = Query("all", description="Filter holdings by exchange (all, binance, okx)"),
 ):
     """
     Portfolio Contagion Map endpoint.
@@ -916,7 +920,15 @@ async def get_contagion_graph(
     from engine.correlation_engine import calculate_contagion_graph
     from services.exchange_service import fetch_daily_ohlcv
 
-    holdings_snapshot = await _load_live_holdings_snapshot(uid)
+    scope = scope.strip().lower()
+    if scope not in ["all", "binance", "okx"]:
+        raise HTTPException(status_code=400, detail="Invalid scope parameter. Must be all, binance, or okx.")
+
+    scope_label_map = {"all": "Portfolio", "binance": "Binance", "okx": "OKX"}
+    scope_label = scope_label_map[scope]
+    market_data_source = "binance" if scope == "all" else scope
+
+    holdings_snapshot = await _load_live_holdings_snapshot(uid, scope=scope)
     positions = holdings_snapshot["holdings"]
     warnings = holdings_snapshot["warnings"]
     has_configured_connection = holdings_snapshot["has_configured_connection"]
@@ -939,24 +951,36 @@ async def get_contagion_graph(
     if len(positions) < 2:
         if not has_configured_connection:
             source_state = "no_connection"
-            message = "Connect Binance Testnet and refresh to generate a live contagion map."
+            message = f"Manage connections and refresh to generate a {scope_label.lower()} contagion map." if scope != "all" else "Manage connections and refresh to generate a portfolio-wide contagion map."
         elif warnings:
             source_state = "error"
             message = warnings[0]
         else:
             source_state = "insufficient_holdings"
-            message = "Contagion mapping needs at least two meaningful non-stable holdings."
+            message = f"Contagion mapping needs at least two meaningful non-stable holdings in the {scope_label} scope."
 
         return {
             "status": "ok",
             "source_state": source_state,
             "message": message,
             "warnings": warnings,
+            "scope": scope,
+            "scope_label": scope_label,
+            "market_data_source": market_data_source,
             "data": calculate_contagion_graph({}, {}, window_days=30),
         }
 
     symbols = list(positions.keys())
-    ohlcv_data = await fetch_daily_ohlcv("binance", symbols, days=45)
+    meta = {"used_fallback": False}
+    ohlcv_data = await fetch_daily_ohlcv(
+        market_data_source, 
+        symbols, 
+        days=45, 
+        out_warnings=warnings,
+        out_meta=meta,
+    )
+    if meta.get("used_fallback"):
+        market_data_source = "binance_fallback"
     graph_data = calculate_contagion_graph(ohlcv_data, positions, window_days=30)
 
     if using_demo:
@@ -967,5 +991,8 @@ async def get_contagion_graph(
         "source_state": "demo" if using_demo else "live",
         "message": warnings[0] if warnings else None,
         "warnings": warnings,
+        "scope": scope,
+        "scope_label": scope_label,
+        "market_data_source": market_data_source,
         "data": graph_data,
     }

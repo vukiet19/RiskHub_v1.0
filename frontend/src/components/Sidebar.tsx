@@ -64,7 +64,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
               </div>
             </div>
             <p className="mt-4 text-xs leading-5 text-text-secondary whitespace-normal">
-              Use the header action to connect Binance Testnet, then refresh to pull backend-managed positions, contagion inputs, and overview data.
+              Use Manage Connections to save one active Binance or OKX futures account per exchange, then refresh to pull backend-managed positions, contagion inputs, and aggregated overview data.
             </p>
           </div>
         </div>

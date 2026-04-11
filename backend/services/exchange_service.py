@@ -364,6 +364,7 @@ async def fetch_and_sync_trades(
     testnet: bool = False,
     since_ms: Optional[int] = None,
     limit: int = 500,
+    market_type: str = "mixed",
 ) -> dict[str, Any]:
     """
     Fetch closed trades from an exchange via CCXT and upsert them into
@@ -407,60 +408,60 @@ async def fetch_and_sync_trades(
 
         # ── Fetch Futures closed orders ──────────────────────────────
         raw_trades: list[dict] = []
-        try:
-            # Try fetchMyTrades first (most granular)
-            trades = await exchange.fetch_my_trades(
-                symbol=None, since=since_ms, limit=limit
-            )
-            if isinstance(trades, list):
-                raw_trades.extend(trades)
-        except Exception as e:
-            logger.warning(
-                "%s: fetchMyTrades(None) failed (%s), starting Dynamic Symbol Discovery",
-                exchange_id, type(e).__name__
-            )
-            # ── DYNAMIC DISCOVERY: Find symbols the user actually uses ───
-            symbols_to_scan = set(COMMON_SYMBOLS)
+        if market_type in {"futures", "mixed"}:
             try:
-                # 1. Check current positions for active symbols
-                positions = await exchange.fetch_positions()
-                for pos in positions:
-                    if float(pos.get('contracts', 0)) != 0 or float(pos.get('unrealizedPnl', 0)) != 0:
-                        symbols_to_scan.add(pos['symbol'])
-                
-                # 2. Check balance for assets with non-zero values
-                bal = await exchange.fetch_balance()
-                for asset, data in bal.get('total', {}).items():
-                    if float(data) > 0 and asset != 'USDT':
-                        # Attempt to guess the USDT unified derivative pair
-                        symbols_to_scan.add(f"{asset}/USDT:USDT")
-            except Exception as disc_e:
-                logger.debug("Symbol discovery limited: %s", disc_e)
-
-            logger.info("%s: Scanning discovered symbols: %s", exchange_id, list(symbols_to_scan))
-            
-            for sym in symbols_to_scan:
+                # Try fetchMyTrades first (most granular)
+                trades = await exchange.fetch_my_trades(
+                    symbol=None, since=since_ms, limit=limit
+                )
+                if isinstance(trades, list):
+                    raw_trades.extend(trades)
+            except Exception as e:
+                logger.warning(
+                    "%s: fetchMyTrades(None) failed (%s), starting Dynamic Symbol Discovery",
+                    exchange_id, type(e).__name__
+                )
+                # ── DYNAMIC DISCOVERY: Find symbols the user actually uses ───
+                symbols_to_scan = set(COMMON_SYMBOLS)
                 try:
-                    trades = await exchange.fetch_my_trades(
-                        symbol=sym, since=since_ms, limit=limit
-                    )
-                    if isinstance(trades, list) and len(trades) > 0:
-                        logger.info("Sync found %d trades for %s", len(trades), sym)
-                        raw_trades.extend(trades)
-                except Exception as sym_e:
-                    logger.debug("Sync skipped %s: %s", sym, sym_e)
-
-
+                    # 1. Check current positions for active symbols
+                    positions = await exchange.fetch_positions()
+                    for pos in positions:
+                        if float(pos.get('contracts', 0)) != 0 or float(pos.get('unrealizedPnl', 0)) != 0:
+                            symbols_to_scan.add(pos['symbol'])
+                    
+                    # 2. Check balance for assets with non-zero values
+                    bal = await exchange.fetch_balance()
+                    for asset, data in bal.get('total', {}).items():
+                        if float(data) > 0 and asset != 'USDT':
+                            # Attempt to guess the USDT unified derivative pair
+                            symbols_to_scan.add(f"{asset}/USDT:USDT")
+                except Exception as disc_e:
+                    logger.debug("Symbol discovery limited: %s", disc_e)
+    
+                logger.info("%s: Scanning discovered symbols: %s", exchange_id, list(symbols_to_scan))
+                
+                for sym in symbols_to_scan:
+                    try:
+                        trades = await exchange.fetch_my_trades(
+                            symbol=sym, since=since_ms, limit=limit
+                        )
+                        if isinstance(trades, list) and len(trades) > 0:
+                            logger.info("Sync found %d trades for %s", len(trades), sym)
+                            raw_trades.extend(trades)
+                    except Exception as sym_e:
+                        logger.debug("Sync skipped %s: %s", sym, sym_e)
 
         # ── Also try Spot trades ─────────────────────────────────────
-        try:
-            exchange.options["defaultType"] = "spot"
-            spot_trades = await exchange.fetch_my_trades(
-                symbol=None, since=since_ms, limit=limit
-            )
-            raw_trades.extend(spot_trades)
-        except Exception as e:
-            logger.debug("Spot trade fetch skipped: %s", e)
+        if market_type in {"spot", "mixed"}:
+            try:
+                exchange.options["defaultType"] = "spot"
+                spot_trades = await exchange.fetch_my_trades(
+                    symbol=None, since=since_ms, limit=limit
+                )
+                raw_trades.extend(spot_trades)
+            except Exception as e:
+                logger.debug("Spot trade fetch skipped: %s", e)
 
         if not raw_trades:
             logger.info("No trades returned from %s for user %s", exchange_id, user_id)
@@ -811,6 +812,8 @@ async def fetch_daily_ohlcv(
     exchange_id: str,
     symbols: list[str],
     days: int = 30,
+    out_warnings: Optional[list[str]] = None,
+    out_meta: Optional[dict[str, Any]] = None,
 ) -> dict[str, list[list[float]]]:
     """
     Fetch daily OHLCV data for a list of symbols for the past `days`.
@@ -821,18 +824,62 @@ async def fetch_daily_ohlcv(
     since = int((datetime.now(tz=timezone.utc).timestamp() - days * 86400) * 1000)
     
     results = {}
+    binance_fallback = None
+    
     try:
-        exchange.options["defaultType"] = "spot" # OHLCV generally easier on spot
+        # Default to spot, but we'll manually probe both
+        exchange.options["defaultType"] = "spot"
         await exchange.load_markets()
+        
         for sym in symbols:
+            ccxt_sym = sym if "/" in sym else f"{sym}/USDT" 
+            spot_sym = ccxt_sym
+            swap_sym = f"{ccxt_sym}:USDT"
+            
+            # 1. Try Spot Market
             try:
-                # CCXT unified symbol (e.g., BTC/USDT)
-                ccxt_sym = sym if "/" in sym else f"{sym}/USDT" 
-                ohlcv = await exchange.fetch_ohlcv(ccxt_sym, '1d', since)
-                results[sym] = ohlcv
+                ohlcv = await exchange.fetch_ohlcv(spot_sym, '1d', since)
+                if ohlcv and len(ohlcv) > 0:
+                    results[sym] = ohlcv
+                    continue
             except Exception as e:
-                logger.warning("Failed to fetch OHLCV for %s: %s", sym, e)
+                logger.debug("Failed Spot OHLCV for %s natively on %s: %s", spot_sym, exchange_id, type(e).__name__)
+                
+            # 2. Try Swap Market (especially for OKX)
+            try:
+                ohlcv = await exchange.fetch_ohlcv(swap_sym, '1d', since)
+                if ohlcv and len(ohlcv) > 0:
+                    results[sym] = ohlcv
+                    continue
+            except Exception as e:
+                logger.debug("Failed Swap OHLCV for %s natively on %s: %s", swap_sym, exchange_id, type(e).__name__)
+                
+            # 3. Universal Fallback to Binance
+            if exchange_id != "binance":
+                try:
+                    if binance_fallback is None:
+                        binance_fallback = _create_exchange_client("binance", "", "")
+                        binance_fallback.options["defaultType"] = "spot"
+                        await binance_fallback.load_markets()
+                    
+                    ohlcv = await binance_fallback.fetch_ohlcv(spot_sym, '1d', since)
+                    if ohlcv and len(ohlcv) > 0:
+                        results[sym] = ohlcv
+                        if out_warnings is not None:
+                            out_warnings.append(f"Used Binance fallback for missing {exchange_id} market data on {sym}.")
+                        if out_meta is not None:
+                            out_meta["used_fallback"] = True
+                        continue
+                except Exception as e:
+                    logger.debug("Failed Binance fallback for %s: %s", sym, type(e).__name__)
+                    
+            logger.warning("All OHLCV attempts failed for %s on %s", sym, exchange_id)
+            if out_warnings is not None:
+                out_warnings.append(f"Could not resolve market data for {sym} on {exchange_id} or fallback.")
+
     finally:
         await exchange.close()
+        if binance_fallback is not None:
+            await binance_fallback.close()
 
     return results

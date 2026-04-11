@@ -13,36 +13,35 @@ from services.exchange_key_service import (
     sanitize_exchange_key_document,
     upsert_exchange_key,
 )
-from services.exchange_service import validate_binance_testnet_credentials
+from services.exchange_service import SUPPORTED_EXCHANGES, fetch_account_overview
 
 router = APIRouter(prefix="/api/v1/exchange-keys", tags=["exchange-keys"])
 logger = logging.getLogger("riskhub.api.exchange_keys")
 
-
-class ConnectBinanceTestnetRequest(BaseModel):
+class ConnectExchangeRequest(BaseModel):
+    exchange_id: str = Field(..., max_length=50)
+    environment: str = Field("mainnet", max_length=50)
+    market_type: str = Field("futures", max_length=50)
+    label: Optional[str] = Field(None, max_length=120)
     api_key: str = Field(..., min_length=1, max_length=512)
     api_secret: str = Field(..., min_length=1, max_length=512)
-    label: Optional[str] = Field(None, max_length=120)
-
+    passphrase: Optional[str] = Field(None, max_length=512)
 
 class ExchangeKeysListResponse(BaseModel):
     status: str
     connections: list[dict[str, Any]]
     count: int
 
-
-class ConnectBinanceTestnetResponse(BaseModel):
+class ConnectExchangeResponse(BaseModel):
     status: str
     connection: dict[str, Any]
     validation: dict[str, Any]
-
 
 def _parse_user_id(user_id: str) -> ObjectId:
     try:
         return ObjectId(user_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail="Invalid user_id format") from e
-
 
 @router.get("/{user_id}", response_model=ExchangeKeysListResponse)
 async def list_exchange_keys(user_id: str):
@@ -59,30 +58,48 @@ async def list_exchange_keys(user_id: str):
         count=len(keys),
     )
 
-
 @router.post(
-    "/{user_id}/binance-testnet/connect",
-    response_model=ConnectBinanceTestnetResponse,
+    "/{user_id}/connect",
+    response_model=ConnectExchangeResponse,
 )
-async def connect_binance_testnet(user_id: str, req: ConnectBinanceTestnetRequest):
+async def connect_exchange(user_id: str, req: ConnectExchangeRequest):
     uid = _parse_user_id(user_id)
+    exchange_id = req.exchange_id.strip().lower()
+    environment = req.environment.strip().lower()
+    market_type = req.market_type.strip().lower()
+    
+    if environment not in ["mainnet", "testnet"]:
+        raise HTTPException(status_code=400, detail=f"Environment '{environment}' is not supported.")
+    if market_type not in ["futures", "spot", "mixed"]:
+        raise HTTPException(status_code=400, detail=f"Market type '{market_type}' is not supported.")
+    
+    if exchange_id not in SUPPORTED_EXCHANGES:
+        raise HTTPException(status_code=400, detail=f"Exchange '{exchange_id}' is not supported.")
+        
     api_key = req.api_key.strip()
     api_secret = req.api_secret.strip()
-    label = (req.label or "").strip() or "Binance Testnet Futures"
+    passphrase = req.passphrase.strip() if req.passphrase else None
+    
+    label = (req.label or "").strip() or f"{exchange_id.capitalize()} {environment.capitalize()} {market_type.capitalize()}"
+
+    testnet = (environment == "testnet")
 
     try:
-        validation = await validate_binance_testnet_credentials(api_key, api_secret)
+        validation = await fetch_account_overview(
+            exchange_id, api_key, api_secret, passphrase, testnet=testnet, market_type=market_type
+        )
+        
         stored_key = await upsert_exchange_key(
             uid,
-            exchange_id="binance",
-            environment="testnet",
-            market_type="futures",
+            exchange_id=exchange_id,
+            environment=environment,
+            market_type=market_type,
             key_doc={
                 "label": label,
                 "api_key_encrypted": encrypt_secret(api_key),
                 "api_secret_encrypted": encrypt_secret(api_secret),
-                "passphrase_encrypted": None,
-                "permissions_verified": validation["permissions_verified"],
+                "passphrase_encrypted": encrypt_secret(passphrase) if passphrase else None,
+                "permissions_verified": ["read"],
                 "is_active": True,
                 "last_sync_at": None,
                 "last_sync_status": "ok",
@@ -99,14 +116,19 @@ async def connect_binance_testnet(user_id: str, req: ConnectBinanceTestnetReques
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
-        logger.exception("Unexpected Binance Testnet connect failure for user %s", user_id)
+        logger.exception("Unexpected connect failure for %s user %s", exchange_id, user_id)
         raise HTTPException(
             status_code=502,
-            detail="Failed to validate or store Binance Testnet credentials.",
+            detail=f"Failed to validate or store {exchange_id} credentials. {e}",
         ) from e
 
-    return ConnectBinanceTestnetResponse(
+    return ConnectExchangeResponse(
         status="ok",
         connection=sanitize_exchange_key_document(stored_key),
-        validation=validation,
+        validation={
+            "permissions_verified": ["read"],
+            "balances_count": validation.get("balances_count", 0),
+            "positions_count": validation.get("positions_count", 0),
+            "warnings": [],
+        },
     )

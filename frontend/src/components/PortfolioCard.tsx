@@ -1,9 +1,11 @@
+import { getExchangeMeta } from "../lib/exchanges";
+
 export interface ExchangeData {
   exchange_id: string;
   trade_count: number;
-  win_rate_pct: string;
-  avg_leverage: string;
-  net_pnl_usd: string;
+  win_rate_pct?: string | number;
+  avg_leverage?: string | number;
+  net_pnl_usd: string | number;
 }
 
 export interface PortfolioCardProps {
@@ -12,55 +14,113 @@ export interface PortfolioCardProps {
   isConnected: boolean;
 }
 
-export function PortfolioCard({ exchanges, totalNetPnl, isConnected }: PortfolioCardProps) {
-  const totalPnlNumber = typeof totalNetPnl === "number"
-    ? totalNetPnl
-    : parseFloat(totalNetPnl || "0");
+function toNumber(value: string | number | undefined): number {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  return Number.parseFloat(value || "0");
+}
+
+export function PortfolioCard({
+  exchanges,
+  totalNetPnl,
+  isConnected,
+}: PortfolioCardProps) {
+  const totalPnlNumber = toNumber(totalNetPnl);
   const hasExchangeData = exchanges.length > 0;
 
   return (
     <div className="compact-metric-card">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: hasExchangeData ? 10 : 0 }}>
-        <span className="text-xs font-semibold text-text-primary tracking-wide">Net PnL by Exchange</span>
-        <span className={`font-mono text-base font-bold tracking-tight ${totalPnlNumber >= 0 ? 'text-success' : 'text-danger'}`}>
-          {totalPnlNumber >= 0 ? '+' : ''}${Math.abs(totalPnlNumber).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div>
+          <span className="text-xs font-semibold tracking-wide text-text-primary">
+            Net PnL by Exchange
+          </span>
+          <p className="mt-1 text-[10px] uppercase tracking-[0.2em] text-text-secondary">
+            Portfolio-wide realized summary
+          </p>
+        </div>
+        <span
+          className={`font-mono text-base font-bold tracking-tight ${
+            totalPnlNumber >= 0 ? "text-success" : "text-danger"
+          }`}
+        >
+          {totalPnlNumber >= 0 ? "+" : ""}$
+          {Math.abs(totalPnlNumber).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
         </span>
       </div>
 
       {hasExchangeData ? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {exchanges.map((ex: ExchangeData, idx: number) => {
-            const isBinance = ex.exchange_id.toLowerCase() === 'binance';
-            const isOkx = ex.exchange_id.toLowerCase() === 'okx';
-            const symbol = isBinance ? 'B' : isOkx ? 'O' : ex.exchange_id.charAt(0).toUpperCase();
-            const pnlNum = parseFloat(ex.net_pnl_usd || '0');
-            const isPositive = pnlNum >= 0;
+        <div className="flex flex-col divide-y divide-white/5">
+          {exchanges.map((exchangeRow) => {
+            const exchangeMeta = getExchangeMeta(exchangeRow.exchange_id);
+            const pnlNumber = toNumber(exchangeRow.net_pnl_usd);
+            const winRate = toNumber(exchangeRow.win_rate_pct);
+            const avgLeverage = toNumber(exchangeRow.avg_leverage);
+            const hasSubMetrics =
+              exchangeRow.win_rate_pct !== undefined ||
+              exchangeRow.avg_leverage !== undefined;
 
             return (
-              <div key={idx} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: idx < exchanges.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div className={`w-7 h-7 rounded-full p-[1px] ${isBinance ? 'bg-gradient-to-br from-yellow-400 to-yellow-600' : isOkx ? 'bg-gradient-to-br from-blue-400 to-blue-600' : 'bg-gradient-to-br from-gray-400 to-gray-600'}`}>
-                    <div className={`w-full h-full bg-main-bg bg-opacity-60 rounded-full flex items-center justify-center font-bold text-[10px] ${isBinance ? 'text-yellow-400' : isOkx ? 'text-blue-400' : 'text-gray-400'}`}>
-                      {symbol}
-                    </div>
+              <div
+                key={exchangeRow.exchange_id}
+                className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"
+              >
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${exchangeMeta.badgeClassName}`}
+                    >
+                      <span
+                        className={`h-1.5 w-1.5 rounded-full ${exchangeMeta.badgeDotClassName}`}
+                      />
+                      {exchangeMeta.label}
+                    </span>
+                    <span className="text-[11px] font-medium text-text-secondary">
+                      {exchangeRow.trade_count} trades
+                    </span>
                   </div>
-                  <div>
-                    <span className="text-xs font-semibold text-text-primary capitalize">{ex.exchange_id}</span>
-                    <span className="text-[9px] text-text-secondary uppercase tracking-widest ml-2">{ex.trade_count ? `${ex.trade_count}T` : ''}</span>
+                  {hasSubMetrics ? (
+                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-text-secondary">
+                      {exchangeRow.win_rate_pct !== undefined ? (
+                        <span>{winRate.toFixed(0)}% win rate</span>
+                      ) : null}
+                      {exchangeRow.avg_leverage !== undefined ? (
+                        <span>{avgLeverage.toFixed(1)}x avg leverage</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="text-right">
+                  <div
+                    className={`font-mono text-sm font-bold ${
+                      pnlNumber >= 0 ? "text-success" : "text-danger"
+                    }`}
+                  >
+                    {pnlNumber >= 0 ? "+" : ""}$
+                    {Math.abs(pnlNumber).toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-text-secondary">
+                    Net PnL
                   </div>
                 </div>
-                <span className={`font-mono font-bold text-xs ${isPositive ? 'text-success' : 'text-danger'}`}>
-                  {isPositive ? '+' : ''}${Math.abs(pnlNum).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
               </div>
             );
           })}
         </div>
       ) : (
-        <div className="text-[10px] text-text-secondary" style={{ marginTop: 4 }}>
+        <div className="mt-1 text-[11px] text-text-secondary">
           {isConnected
-            ? "No synced trade history yet."
-            : "Connect exchange to load PnL data."}
+            ? "No synced trade history is available for active exchanges yet."
+            : "Manage connections to load by-exchange PnL rows."}
         </div>
       )}
     </div>

@@ -5,11 +5,13 @@ interface NavbarProps {
   lastRefreshAt: string | null;
   hasConfiguredExchangeConnection: boolean;
   hasLiveExchangeConnection: boolean;
+  activeExchangeCount: number;
+  configuredExchangeCount: number;
   statusMessage?: string | null;
   unreadAlertCount: number;
   isRefreshing?: boolean;
   onRefresh: () => void;
-  onOpenConnect: () => void;
+  onOpenConnections: () => void;
 }
 
 function formatCurrency(value: number): string {
@@ -44,17 +46,23 @@ export function Navbar({
   lastRefreshAt,
   hasConfiguredExchangeConnection,
   hasLiveExchangeConnection,
+  activeExchangeCount,
+  configuredExchangeCount,
   statusMessage = null,
   unreadAlertCount,
   isRefreshing = false,
   onRefresh,
-  onOpenConnect,
+  onOpenConnections,
 }: NavbarProps) {
+  const managedExchangeCount =
+    activeExchangeCount > 0 ? activeExchangeCount : configuredExchangeCount;
+  const exchangeUnit =
+    managedExchangeCount === 1 ? "active exchange" : "active exchanges";
   const connectionCopy = hasLiveExchangeConnection
-    ? "Backend-managed Binance Testnet data is live."
+    ? `Portfolio is aggregated across ${managedExchangeCount} ${exchangeUnit}.`
     : hasConfiguredExchangeConnection
-      ? statusMessage || "Binance Testnet is connected. Refresh to retry live data sync."
-      : "Connect Binance Testnet to unlock backend-driven dashboard data.";
+      ? statusMessage || `${managedExchangeCount} ${exchangeUnit} configured. Refresh to retry live data sync.`
+      : "Manage Binance and OKX futures connections to unlock backend-driven dashboard data.";
 
   const refreshLabel = formatRefreshLabel(lastRefreshAt, hasConfiguredExchangeConnection);
   const refreshStatusLabel = hasLiveExchangeConnection
@@ -97,6 +105,18 @@ export function Navbar({
 
         <div className="hidden h-10 w-px bg-white/10 md:block" />
 
+        <div className="hidden min-w-[150px] rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 md:flex md:flex-col">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+            Active Exchanges
+          </span>
+          <span className="mt-1 font-mono text-lg font-semibold text-text-primary">
+            {activeExchangeCount}
+          </span>
+          <span className="text-[10px] uppercase tracking-[0.18em] text-text-secondary">
+            {configuredExchangeCount} saved
+          </span>
+        </div>
+
         <div className="flex flex-col items-end gap-1 text-xs text-gray-400">
           <span className="rounded border border-white/10 bg-white/5 px-2 py-0.5 font-mono">
             {refreshLabel}
@@ -127,12 +147,12 @@ export function Navbar({
           className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-text-primary transition-all hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
-          <span>{isRefreshing ? "Refreshing..." : "Refresh Data"}</span>
+          <span>{isRefreshing ? "Refreshing..." : "Refresh All Data"}</span>
         </button>
 
         <button
           type="button"
-          onClick={onOpenConnect}
+          onClick={onOpenConnections}
           className="group inline-flex items-center gap-2.5 rounded-xl border border-primary/30 bg-gradient-to-r from-primary/20 to-primary/10 px-4 py-2.5 text-sm font-medium transition-all hover:from-primary/30 hover:to-primary/20"
         >
           {hasConfiguredExchangeConnection ? (
@@ -141,7 +161,7 @@ export function Navbar({
             <Link2 size={16} className="text-primary transition-all group-hover:drop-shadow-[0_0_8px_rgba(26,86,219,0.8)]" />
           )}
           <span className="tracking-wide text-gray-200">
-            {hasConfiguredExchangeConnection ? "Reconnect Binance Testnet" : "Connect Binance Testnet"}
+            Manage Connections
           </span>
         </button>
       </div>

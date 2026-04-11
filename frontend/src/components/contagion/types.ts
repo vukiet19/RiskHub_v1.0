@@ -122,6 +122,8 @@ export interface ContagionData {
 
 // ── API Response Envelope ─────────────────────────────────────────────────
 
+export type ContagionScope = "all" | "binance" | "okx";
+
 export type ContagionSourceState =
   | "live"
   | "demo"
@@ -130,9 +132,14 @@ export type ContagionSourceState =
   | "error";
 
 export interface ContagionApiResponse {
+  status?: string;
+  scope?: ContagionScope;
+  scope_label?: string;
+  market_data_source?: string | null;
   data?: ContagionData;
   source_state?: ContagionSourceState;
   message?: string | null;
+  warnings?: string[];
 }
 
 // ── Layout helpers ────────────────────────────────────────────────────────

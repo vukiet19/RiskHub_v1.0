@@ -196,6 +196,9 @@ async def upsert_exchange_key(
             else:
                 normalized_existing["is_active"] = False
                 updated_keys.append(normalized_existing)
+        elif key_matches(normalized_existing, exchange_id=exchange_id):
+            normalized_existing["is_active"] = False
+            updated_keys.append(normalized_existing)
         else:
             updated_keys.append(normalized_existing)
 
