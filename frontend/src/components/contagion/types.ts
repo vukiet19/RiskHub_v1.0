@@ -123,6 +123,7 @@ export interface ContagionData {
 // ── API Response Envelope ─────────────────────────────────────────────────
 
 export type ContagionScope = "all" | "binance" | "okx";
+export type ContagionMode = "all" | "spot" | "future";
 
 export type ContagionSourceState =
   | "live"
@@ -135,6 +136,8 @@ export interface ContagionApiResponse {
   status?: string;
   scope?: ContagionScope;
   scope_label?: string;
+  mode?: ContagionMode;
+  mode_label?: string;
   market_data_source?: string | null;
   data?: ContagionData;
   source_state?: ContagionSourceState;

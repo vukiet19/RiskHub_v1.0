@@ -47,6 +47,11 @@ class PnlCategory(str, Enum):
     BREAKEVEN = "breakeven"
 
 
+class HistoryRecordType(str, Enum):
+    CLOSED_POSITION = "closed_position"
+    LEGACY_FILL = "legacy_fill"
+
+
 # ── Sub-documents ────────────────────────────────────────────────────────
 
 class RawExchangeData(BaseModel):
@@ -66,9 +71,9 @@ class TradeHistoryDocument(MongoBaseDocument):
     """
     Root Pydantic model for the ``trade_history`` MongoDB collection.
 
-    Every closed trade fetched from every connected exchange for a user
-    is represented as one document.  This collection is the primary input
-    to the Behavioral Quant Engine.
+    Every closed-position history row fetched or reconstructed from every
+    connected exchange for a user is represented as one document. This
+    collection is the primary input to the Behavioral Quant Engine.
     """
 
     # Partition keys (critical for index performance)
@@ -77,7 +82,7 @@ class TradeHistoryDocument(MongoBaseDocument):
     account_type: AccountType
 
     # Exchange-native identifiers
-    exchange_trade_id: str              # unique per exchange — dedup index field
+    exchange_trade_id: str              # unique record id per exchange — dedup index field
     exchange_order_id: Optional[str] = None
 
     # Instrument & Position
@@ -115,5 +120,8 @@ class TradeHistoryDocument(MongoBaseDocument):
     raw_exchange_data: Optional[RawExchangeData] = None
 
     # Metadata
+    record_type: HistoryRecordType = HistoryRecordType.CLOSED_POSITION
+    aggregation_source: Optional[str] = None
+    source_fill_count: int = 1
     synced_at: datetime = Field(default_factory=datetime.utcnow)
-    schema_version: int = 1
+    schema_version: int = 2

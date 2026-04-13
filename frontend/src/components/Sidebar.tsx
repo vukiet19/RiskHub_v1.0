@@ -1,4 +1,17 @@
-import { LayoutDashboard, Activity, Fingerprint, History, Settings, Menu } from 'lucide-react';
+"use client";
+
+import type { ReactNode } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import {
+  Activity,
+  Fingerprint,
+  History,
+  LayoutDashboard,
+  Menu,
+  Settings,
+  Sparkles,
+} from "lucide-react";
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -6,6 +19,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
+  const pathname = usePathname();
+
   return (
     <aside
       className={`bg-surface-low flex-col hidden md:flex relative z-20 transition-all duration-300 border-r border-white/5 overflow-hidden ${
@@ -36,11 +51,39 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
       </div>
       
       <nav className={`flex-1 mt-2 space-y-1.5 ${collapsed ? 'px-3' : 'px-4'}`}>
-        <NavItem icon={<LayoutDashboard size={18} />} label="Dashboard" active collapsed={collapsed} />
-        <NavItem icon={<Activity size={18} />} label="Risk Analysis" collapsed={collapsed} />
-        <NavItem icon={<Fingerprint size={18} />} label="SBT Identity" collapsed={collapsed} />
-        <NavItem icon={<History size={18} />} label="Alert History" collapsed={collapsed} />
-        <NavItem icon={<Settings size={18} />} label="Settings" collapsed={collapsed} />
+        <NavItem
+          icon={<LayoutDashboard size={18} />}
+          label="Dashboard"
+          href="/dashboard"
+          active={pathname === "/dashboard"}
+          collapsed={collapsed}
+        />
+        <NavItem
+          icon={<Activity size={18} />}
+          label="Risk Analysis"
+          href="/risk-analysis"
+          active={pathname.startsWith("/risk-analysis")}
+          collapsed={collapsed}
+        />
+        <NavItem
+          icon={<Fingerprint size={18} />}
+          label="SBT Identity"
+          iconFallback={<Sparkles size={18} />}
+          disabled
+          collapsed={collapsed}
+        />
+        <NavItem
+          icon={<History size={18} />}
+          label="Alert History"
+          disabled
+          collapsed={collapsed}
+        />
+        <NavItem
+          icon={<Settings size={18} />}
+          label="Settings"
+          disabled
+          collapsed={collapsed}
+        />
       </nav>
       
       {!collapsed && (
@@ -64,7 +107,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
               </div>
             </div>
             <p className="mt-4 text-xs leading-5 text-text-secondary whitespace-normal">
-              Use Manage Connections to save one active Binance or OKX futures account per exchange, then refresh to pull backend-managed positions, contagion inputs, and aggregated overview data.
+              Use Manage Connections to save one active Binance or OKX connection per exchange, then refresh to pull backend-managed spot balances, positions, contagion inputs, and aggregated overview data.
             </p>
           </div>
         </div>
@@ -73,13 +116,65 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
   );
 }
 
-function NavItem({ icon, label, active = false, collapsed = false }: { icon: React.ReactNode; label: string; active?: boolean; collapsed?: boolean }) {
+function NavItem({
+  icon,
+  iconFallback,
+  label,
+  href,
+  active = false,
+  disabled = false,
+  collapsed = false,
+}: {
+  icon: ReactNode;
+  iconFallback?: ReactNode;
+  label: string;
+  href?: string;
+  active?: boolean;
+  disabled?: boolean;
+  collapsed?: boolean;
+}) {
+  const content = (
+    <>
+      {active && !collapsed ? (
+        <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary" />
+      ) : null}
+      {active && collapsed ? (
+        <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-md bg-primary" />
+      ) : null}
+      <div
+        className={`transition-colors shrink-0 ${
+          active ? "text-primary" : "text-text-secondary group-hover:text-text-primary"
+        }`}
+      >
+        {iconFallback ?? icon}
+      </div>
+      {!collapsed ? (
+        <span className="tracking-wide text-sm whitespace-nowrap overflow-hidden text-ellipsis">
+          {label}
+        </span>
+      ) : null}
+    </>
+  );
+
+  const className = `flex items-center py-3 transition-colors duration-300 group ${
+    disabled
+      ? "cursor-not-allowed text-text-secondary/50"
+      : active
+        ? "text-text-primary font-medium relative"
+        : "text-text-secondary hover:text-text-primary"
+  } ${collapsed ? "justify-center rounded-xl hover:bg-white/5" : "px-4 gap-3"}`;
+
+  if (disabled || !href) {
+    return (
+      <div className={className} title={collapsed ? `${label} (coming soon)` : "Coming soon"}>
+        {content}
+      </div>
+    );
+  }
+
   return (
-    <a href="#" className={`flex items-center py-3 transition-colors duration-300 group ${active ? 'text-text-primary font-medium relative' : 'text-text-secondary hover:text-text-primary'} ${collapsed ? 'justify-center rounded-xl hover:bg-white/5' : 'px-4 gap-3'}`} title={collapsed ? label : undefined}>
-      {active && !collapsed && <div className="absolute left-0 top-0 bottom-0 w-[2px] bg-primary"></div>}
-      {active && collapsed && <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-md bg-primary"></div>}
-      <div className={`${active ? 'text-primary' : 'text-text-secondary group-hover:text-text-primary'} transition-colors shrink-0`}>{icon}</div>
-      {!collapsed && <span className="tracking-wide text-sm whitespace-nowrap overflow-hidden text-ellipsis">{label}</span>}
-    </a>
+    <Link href={href} className={className} title={collapsed ? label : undefined}>
+      {content}
+    </Link>
   );
 }

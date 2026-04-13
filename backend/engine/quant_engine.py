@@ -67,11 +67,12 @@ async def _fetch_trades(
     """
     db = get_database()
     since = datetime.now(tz=timezone.utc) - timedelta(days=window_days)
+    base_query = {"user_id": user_id, "closed_at": {"$gte": since}}
+    preferred_query = {**base_query, "record_type": "closed_position"}
+    query = preferred_query if await db.trade_history.find_one(preferred_query, projection={"_id": 1}) else base_query
 
     cursor = (
-        db.trade_history.find(
-            {"user_id": user_id, "closed_at": {"$gte": since}},
-        )
+        db.trade_history.find(query)
         .sort("closed_at", -1)
         .hint("idx_user_exchange_closedat_desc")
     )
@@ -319,12 +320,15 @@ def _compute_exchange_breakdown(trades: list[dict]) -> list[dict[str, Any]]:
         wr = (Decimal(str(wins)) / Decimal(str(total)) * 100).quantize(Decimal("0.01")) if total > 0 else Decimal("0")
         levs = [t["leverage"] for t in ex_trades if t.get("leverage", 1) > 1]
         avg_l = Decimal(str(statistics.mean(levs))).quantize(Decimal("0.01")) if levs else Decimal("0")
+        additional = _compute_additional_metrics(ex_trades)
         net = sum(_to_dec(t.get("realized_pnl_usd")) for t in ex_trades).quantize(Decimal("0.01"))
         result.append({
             "exchange_id": eid,
             "trade_count": total,
             "win_rate_pct": net if False else wr,  # wr
             "avg_leverage": avg_l,
+            "profit_factor": additional["profit_factor"],
+            "sharpe_ratio": additional["sharpe_ratio"],
             "net_pnl_usd": net,
         })
     return result
@@ -851,6 +855,8 @@ async def _persist_metrics_snapshot(
                 "trade_count": ex["trade_count"],
                 "win_rate_pct": Decimal128(str(ex["win_rate_pct"])),
                 "avg_leverage": Decimal128(str(ex["avg_leverage"])),
+                "profit_factor": Decimal128(str(ex["profit_factor"])),
+                "sharpe_ratio": Decimal128(str(ex["sharpe_ratio"])),
                 "net_pnl_usd": Decimal128(str(ex["net_pnl_usd"])),
             }
             for ex in exchange_breakdown

@@ -196,7 +196,11 @@ async def upsert_exchange_key(
             else:
                 normalized_existing["is_active"] = False
                 updated_keys.append(normalized_existing)
-        elif key_matches(normalized_existing, exchange_id=exchange_id):
+        elif key_matches(
+            normalized_existing,
+            exchange_id=exchange_id,
+            environment=environment,
+        ):
             normalized_existing["is_active"] = False
             updated_keys.append(normalized_existing)
         else:
@@ -269,3 +273,53 @@ async def update_exchange_key_sync_status(
         },
     )
     return updated_key
+
+
+async def delete_exchange_key(
+    user_id: ObjectId,
+    *,
+    exchange_id: str,
+    environment: str,
+) -> dict[str, int]:
+    db = get_database()
+    user = await db.users.find_one(
+        {"_id": user_id},
+        projection={"exchange_keys": 1},
+    )
+    if not user:
+        raise LookupError(f"User '{user_id}' was not found.")
+
+    updated_keys: list[dict[str, Any]] = []
+    deleted_count = 0
+    for existing_key in user.get("exchange_keys", []):
+        normalized_existing = normalise_exchange_key_document(existing_key)
+        if key_matches(
+            normalized_existing,
+            exchange_id=exchange_id,
+            environment=environment,
+        ):
+            deleted_count += 1
+            continue
+        updated_keys.append(normalized_existing)
+
+    if deleted_count == 0:
+        return {
+            "deleted_count": 0,
+            "remaining_count": len(user.get("exchange_keys", [])),
+        }
+
+    now = _utcnow()
+    await db.users.update_one(
+        {"_id": user_id},
+        {
+            "$set": {
+                "exchange_keys": updated_keys,
+                "updated_at": now,
+            }
+        },
+    )
+
+    return {
+        "deleted_count": deleted_count,
+        "remaining_count": len(updated_keys),
+    }

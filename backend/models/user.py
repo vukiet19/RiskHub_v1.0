@@ -47,6 +47,7 @@ class SyncStatus(str, Enum):
 class ExchangeEnvironment(str, Enum):
     TESTNET = "testnet"
     MAINNET = "mainnet"
+    DEMO = "demo"
 
 
 class ExchangeMarketType(str, Enum):

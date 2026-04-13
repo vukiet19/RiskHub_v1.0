@@ -34,7 +34,11 @@ async def seed():
     metrics = {
         "user_id": dummy_id,
         "calculated_at": datetime.now(timezone.utc),
+        "window_days": 30,
+        "trade_count": 43,
         "net_pnl_usd": Decimal128("1250.45"),
+        "profit_factor": Decimal128("1.56"),
+        "sharpe_ratio": Decimal128("0.81"),
         "discipline_score": {
             "total": 85,
             "grade": "A",
@@ -60,6 +64,8 @@ async def seed():
                 "trade_count": 28,
                 "win_rate_pct": "64.2",
                 "avg_leverage": "12.5",
+                "profit_factor": Decimal128("1.74"),
+                "sharpe_ratio": Decimal128("0.92"),
                 "net_pnl_usd": Decimal128("750.45")
             },
             {
@@ -67,6 +73,8 @@ async def seed():
                 "trade_count": 15,
                 "win_rate_pct": "58.0",
                 "avg_leverage": "5.0",
+                "profit_factor": Decimal128("1.28"),
+                "sharpe_ratio": Decimal128("0.63"),
                 "net_pnl_usd": Decimal128("500.00")
             }
         ],

@@ -256,8 +256,12 @@ def calculate_contagion_graph(
     if total_value == 0:
         total_value = 1.0  # avoid div-by-zero
 
+    raw_weight_pcts = {
+        s: (positions.get(s, 0) / total_value * 100)
+        for s in symbols
+    }
     weight_pcts = {
-        s: round(positions.get(s, 0) / total_value * 100, 1)
+        s: round(raw_weight_pcts[s], 2)
         for s in symbols
     }
 
@@ -336,7 +340,7 @@ def calculate_contagion_graph(
     systemic_scores: Dict[str, float] = {}
     for s in symbols:
         norm_degree = degree_sums[s] / max_degree
-        norm_weight = weight_pcts[s] / 100.0
+        norm_weight = raw_weight_pcts[s] / 100.0
         # Combine: 60% network influence + 40% portfolio weight
         raw_score = norm_degree * 0.6 + norm_weight * 0.4
         systemic_scores[s] = round(raw_score * 100, 1)
@@ -349,7 +353,7 @@ def calculate_contagion_graph(
     if edges:
         # Score = correlation × combined portfolio importance
         def pair_risk(e):
-            combined_weight = (weight_pcts.get(e["source"], 0) + weight_pcts.get(e["target"], 0)) / 200.0
+            combined_weight = (raw_weight_pcts.get(e["source"], 0) + raw_weight_pcts.get(e["target"], 0)) / 200.0
             return e["abs_correlation"] * combined_weight
 
         best_edge = max(edges, key=pair_risk)

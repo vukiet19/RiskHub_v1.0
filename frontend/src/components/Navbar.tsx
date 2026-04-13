@@ -57,12 +57,12 @@ export function Navbar({
   const managedExchangeCount =
     activeExchangeCount > 0 ? activeExchangeCount : configuredExchangeCount;
   const exchangeUnit =
-    managedExchangeCount === 1 ? "active exchange" : "active exchanges";
+    managedExchangeCount === 1 ? "active connection" : "active connections";
   const connectionCopy = hasLiveExchangeConnection
     ? `Portfolio is aggregated across ${managedExchangeCount} ${exchangeUnit}.`
     : hasConfiguredExchangeConnection
       ? statusMessage || `${managedExchangeCount} ${exchangeUnit} configured. Refresh to retry live data sync.`
-      : "Manage Binance and OKX futures connections to unlock backend-driven dashboard data.";
+      : "Manage Binance and OKX connections to unlock backend-driven spot balances and futures data.";
 
   const refreshLabel = formatRefreshLabel(lastRefreshAt, hasConfiguredExchangeConnection);
   const refreshStatusLabel = hasLiveExchangeConnection
@@ -107,7 +107,7 @@ export function Navbar({
 
         <div className="hidden min-w-[150px] rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 md:flex md:flex-col">
           <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-            Active Exchanges
+            Active Connections
           </span>
           <span className="mt-1 font-mono text-lg font-semibold text-text-primary">
             {activeExchangeCount}

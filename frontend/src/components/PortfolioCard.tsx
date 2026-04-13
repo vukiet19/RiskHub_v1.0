@@ -81,7 +81,7 @@ export function PortfolioCard({
                       {exchangeMeta.label}
                     </span>
                     <span className="text-[11px] font-medium text-text-secondary">
-                      {exchangeRow.trade_count} trades
+                      {exchangeRow.trade_count} closed positions
                     </span>
                   </div>
                   {hasSubMetrics ? (
@@ -119,7 +119,7 @@ export function PortfolioCard({
       ) : (
         <div className="mt-1 text-[11px] text-text-secondary">
           {isConnected
-            ? "No synced trade history is available for active exchanges yet."
+            ? "No synced closed-position history is available for active exchanges yet."
             : "Manage connections to load by-exchange PnL rows."}
         </div>
       )}

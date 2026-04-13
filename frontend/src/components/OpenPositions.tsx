@@ -30,11 +30,11 @@ export function OpenPositions({
   const displayPositions = positions.length > 0 ? positions : [];
   const partialWarnings = warnings.filter(Boolean);
   const emptyStateMessage = !isConnected
-    ? "Manage at least one futures connection to load live positions."
+    ? "Manage at least one connection with futures access to load live positions."
     : sourceState === "error"
       ? statusMessage || "Live positions are currently unavailable across active exchanges."
       : sourceState === "no_open_positions"
-        ? "No open futures positions were found across active exchanges."
+        ? "No open futures positions were found across active futures-enabled exchanges."
         : statusMessage || "No open futures positions found.";
 
   return (

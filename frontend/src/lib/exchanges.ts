@@ -4,7 +4,7 @@ export interface ExchangeMeta {
   id: string;
   label: string;
   shortLabel: string;
-  defaultEnvironment: "mainnet" | "testnet";
+  defaultEnvironment: "mainnet" | "testnet" | "demo";
   requiresPassphrase: boolean;
   accentClassName: string;
   badgeClassName: string;
@@ -16,7 +16,7 @@ const EXCHANGE_META: Record<SupportedExchangeId, ExchangeMeta> = {
     id: "binance",
     label: "Binance",
     shortLabel: "BIN",
-    defaultEnvironment: "testnet",
+    defaultEnvironment: "mainnet",
     requiresPassphrase: false,
     accentClassName: "text-[#ffd76a]",
     badgeClassName: "border-[#f0b90b]/30 bg-[#f0b90b]/10 text-[#ffd76a]",

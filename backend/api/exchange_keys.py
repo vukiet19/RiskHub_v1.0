@@ -4,11 +4,12 @@ import logging
 from typing import Any, Optional
 
 from bson import ObjectId
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from security import EncryptionConfigError, encrypt_secret
 from services.exchange_key_service import (
+    delete_exchange_key,
     get_user_exchange_keys,
     sanitize_exchange_key_document,
     upsert_exchange_key,
@@ -18,10 +19,13 @@ from services.exchange_service import SUPPORTED_EXCHANGES, fetch_account_overvie
 router = APIRouter(prefix="/api/v1/exchange-keys", tags=["exchange-keys"])
 logger = logging.getLogger("riskhub.api.exchange_keys")
 
+SUPPORTED_ENVIRONMENTS = {"mainnet", "testnet"}
+
+
 class ConnectExchangeRequest(BaseModel):
     exchange_id: str = Field(..., max_length=50)
     environment: str = Field("mainnet", max_length=50)
-    market_type: str = Field("futures", max_length=50)
+    market_type: str = Field("mixed", max_length=50)
     label: Optional[str] = Field(None, max_length=120)
     api_key: str = Field(..., min_length=1, max_length=512)
     api_secret: str = Field(..., min_length=1, max_length=512)
@@ -36,6 +40,13 @@ class ConnectExchangeResponse(BaseModel):
     status: str
     connection: dict[str, Any]
     validation: dict[str, Any]
+
+
+class DeleteExchangeResponse(BaseModel):
+    status: str
+    deleted_count: int
+    remaining_count: int
+
 
 def _parse_user_id(user_id: str) -> ObjectId:
     try:
@@ -68,25 +79,38 @@ async def connect_exchange(user_id: str, req: ConnectExchangeRequest):
     environment = req.environment.strip().lower()
     market_type = req.market_type.strip().lower()
     
-    if environment not in ["mainnet", "testnet"]:
-        raise HTTPException(status_code=400, detail=f"Environment '{environment}' is not supported.")
+    allowed_environments = set(SUPPORTED_ENVIRONMENTS)
+    if exchange_id == "binance":
+        allowed_environments.add("demo")
+    if environment not in allowed_environments:
+        allowed = ", ".join(sorted(allowed_environments))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Environment '{environment}' is not supported for {exchange_id}. Supported: {allowed}.",
+        )
     if market_type not in ["futures", "spot", "mixed"]:
         raise HTTPException(status_code=400, detail=f"Market type '{market_type}' is not supported.")
     
     if exchange_id not in SUPPORTED_EXCHANGES:
         raise HTTPException(status_code=400, detail=f"Exchange '{exchange_id}' is not supported.")
         
-    api_key = req.api_key.strip()
-    api_secret = req.api_secret.strip()
+    api_key = "".join(req.api_key.split())
+    api_secret = "".join(req.api_secret.split())
     passphrase = req.passphrase.strip() if req.passphrase else None
+
+    if not api_key or not api_secret:
+        raise HTTPException(status_code=400, detail="API key and API secret are required.")
     
     label = (req.label or "").strip() or f"{exchange_id.capitalize()} {environment.capitalize()} {market_type.capitalize()}"
 
-    testnet = (environment == "testnet")
-
     try:
         validation = await fetch_account_overview(
-            exchange_id, api_key, api_secret, passphrase, testnet=testnet, market_type=market_type
+            exchange_id,
+            api_key,
+            api_secret,
+            passphrase,
+            environment=environment,
+            market_type=market_type,
         )
         
         stored_key = await upsert_exchange_key(
@@ -129,6 +153,62 @@ async def connect_exchange(user_id: str, req: ConnectExchangeRequest):
             "permissions_verified": ["read"],
             "balances_count": validation.get("balances_count", 0),
             "positions_count": validation.get("positions_count", 0),
-            "warnings": [],
+            "spot_asset_count": validation.get("spot_asset_count", 0),
+            "spot_total_usd": validation.get("spot_total_usd", 0),
+            "warnings": validation.get("warnings", []),
         },
+    )
+
+
+@router.delete(
+    "/{user_id}/connection",
+    response_model=DeleteExchangeResponse,
+)
+async def delete_connection(
+    user_id: str,
+    exchange_id: str = Query(..., description="Exchange identifier (binance, okx)"),
+    environment: str = Query(..., description="Connection environment (mainnet, testnet, demo for binance)"),
+):
+    uid = _parse_user_id(user_id)
+    normalized_exchange = exchange_id.strip().lower()
+    normalized_environment = environment.strip().lower()
+
+    if normalized_exchange not in SUPPORTED_EXCHANGES:
+        raise HTTPException(status_code=400, detail=f"Exchange '{normalized_exchange}' is not supported.")
+
+    allowed_environments = set(SUPPORTED_ENVIRONMENTS)
+    if normalized_exchange == "binance":
+        allowed_environments.add("demo")
+    if normalized_environment not in allowed_environments:
+        allowed = ", ".join(sorted(allowed_environments))
+        raise HTTPException(
+            status_code=400,
+            detail=f"Environment '{normalized_environment}' is not supported for {normalized_exchange}. Supported: {allowed}.",
+        )
+
+    try:
+        result = await delete_exchange_key(
+            uid,
+            exchange_id=normalized_exchange,
+            environment=normalized_environment,
+        )
+    except LookupError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except Exception as e:
+        logger.exception("Unexpected delete failure for %s user %s", normalized_exchange, user_id)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to delete {normalized_exchange} credentials. {e}",
+        ) from e
+
+    if result["deleted_count"] == 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No saved connection found for {normalized_exchange} {normalized_environment}.",
+        )
+
+    return DeleteExchangeResponse(
+        status="ok",
+        deleted_count=result["deleted_count"],
+        remaining_count=result["remaining_count"],
     )

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from bson import ObjectId, Decimal128
 from fastapi import APIRouter, HTTPException, Query
@@ -44,6 +44,12 @@ STABLE_ASSETS = {
     "USD", "USDT", "USDC", "BUSD", "FDUSD", "TUSD", "USDP", "DAI",
 }
 QUOTE_SUFFIXES = tuple(sorted(STABLE_ASSETS, key=len, reverse=True))
+DISPLAY_MODE_LABELS: dict[str, str] = {
+    "all": "All",
+    "spot": "Spot",
+    "future": "Future",
+}
+DisplayMode = Literal["all", "spot", "future"]
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -95,13 +101,31 @@ def _extract_base_asset(symbol: str) -> str:
     return clean
 
 
-def _latest_close(candles: list[list[float]]) -> Optional[float]:
-    if not candles:
-        return None
-    last = candles[-1]
-    if len(last) < 5:
-        return None
-    return _safe_float(last[4])
+def _normalise_display_mode(mode: str) -> DisplayMode:
+    clean = (mode or "all").strip().lower()
+    if clean not in DISPLAY_MODE_LABELS:
+        raise HTTPException(status_code=400, detail="Invalid mode parameter. Must be all, spot, or future.")
+    return clean  # type: ignore[return-value]
+
+
+def _mode_includes_spot(mode: DisplayMode) -> bool:
+    return mode in {"all", "spot"}
+
+
+def _mode_includes_futures(mode: DisplayMode) -> bool:
+    return mode in {"all", "future"}
+
+
+def _merge_holdings(*sources: dict[str, float]) -> dict[str, float]:
+    merged: dict[str, float] = {}
+    for source in sources:
+        for asset, value in source.items():
+            merged[asset] = merged.get(asset, 0.0) + round(_safe_float(value), 2)
+    return {
+        asset: round(value, 2)
+        for asset, value in merged.items()
+        if value > 0
+    }
 
 
 async def _get_live_exchange_context(user_id: ObjectId, scope: str = "all") -> dict[str, Any]:
@@ -171,6 +195,14 @@ async def _get_live_exchange_context(user_id: ObjectId, scope: str = "all") -> d
 
 
 def _normalise_position_snapshot(position: dict[str, Any], exchange_id: str) -> dict[str, Any]:
+    notional = abs(
+        _safe_float(position.get("notional"))
+        or (
+            _safe_float(position.get("contracts", 0))
+            * _safe_float(position.get("contractSize", 1))
+            * _safe_float(position.get("mark_price", 0))
+        )
+    )
     return {
         "symbol": position.get("symbol") or "UNKNOWN",
         "side": str(position.get("side") or "long"),
@@ -179,10 +211,36 @@ def _normalise_position_snapshot(position: dict[str, Any], exchange_id: str) -> 
         "mark_price": str(round(_safe_float(position.get("mark_price")), 6)),
         "entry_price": str(round(_safe_float(position.get("entry_price")), 6)),
         "exchange_id": exchange_id,
+        "notional": float(round(notional, 2)),
     }
 
 
-async def _load_live_holdings_snapshot(user_id: ObjectId, scope: str = "all") -> dict[str, Any]:
+def _normalise_spot_asset_snapshot(
+    asset: dict[str, Any],
+    exchange_id: str,
+    connection_label: str | None = None,
+) -> dict[str, Any]:
+    last_price = asset.get("last_price_usd")
+    last_price_value = _safe_float(last_price) if last_price not in [None, ""] else None
+    return {
+        "asset": str(asset.get("asset") or "").upper(),
+        "total": str(asset.get("total") or "0"),
+        "free": str(asset.get("free") or "0"),
+        "used": str(asset.get("used") or "0"),
+        "usd_value": round(_safe_float(asset.get("usd_value")), 2),
+        "last_price_usd": round(last_price_value, 8) if last_price_value is not None else None,
+        "pricing_status": str(asset.get("pricing_status") or "unknown"),
+        "is_stable": bool(asset.get("is_stable", False)),
+        "exchange_id": exchange_id,
+        "connection_label": connection_label,
+    }
+
+
+async def _load_live_holdings_snapshot(
+    user_id: ObjectId,
+    scope: str = "all",
+    mode: DisplayMode = "all",
+) -> dict[str, Any]:
     """
     Best-effort live holdings loader using server-side exchange access.
     Returns holdings plus connection-state metadata for dashboard messaging.
@@ -197,7 +255,8 @@ async def _load_live_holdings_snapshot(user_id: ObjectId, scope: str = "all") ->
             "has_configured_connection": context["has_configured_connection"],
         }
 
-    holdings: dict[str, float] = {}
+    spot_holdings: dict[str, float] = {}
+    futures_holdings: dict[str, float] = {}
 
     for credential in credentials:
         exchange_id = credential["exchange_id"]
@@ -205,75 +264,86 @@ async def _load_live_holdings_snapshot(user_id: ObjectId, scope: str = "all") ->
         api_secret = credential["api_secret"]
         passphrase = credential.get("passphrase")
         market_type = credential.get("market_type", "mixed")
-        testnet = bool(credential.get("testnet"))
+        environment = str(credential.get("environment", "mainnet") or "mainnet").strip().lower()
 
-        if market_type in {"spot", "mixed"}:
+        if _mode_includes_spot(mode):
             try:
                 balances = await fetch_spot_balances(
                     exchange_id=exchange_id,
                     api_key=api_key,
                     api_secret=api_secret,
                     passphrase=passphrase,
-                    testnet=testnet,
+                    environment=environment,
                 )
-                assets = [
-                    asset
-                    for asset in balances.get("assets", [])
-                    if asset.get("asset") not in STABLE_ASSETS and _safe_float(asset.get("total")) > 0
-                ]
-
-                asset_symbols = [asset["asset"] for asset in assets]
-                spot_ohlcv = (
-                    await fetch_daily_ohlcv(exchange_id, asset_symbols, days=8)
-                    if asset_symbols else {}
+                warnings.extend(
+                    warning
+                    for warning in balances.get("warnings", [])
+                    if isinstance(warning, str) and warning
                 )
-
-                for asset in assets:
-                    symbol = asset["asset"]
-                    qty = _safe_float(asset.get("total"))
-                    last_close = _latest_close(spot_ohlcv.get(symbol, []))
-                    if qty <= 0 or last_close is None or last_close <= 0:
+                for asset in balances.get("assets", []):
+                    symbol = str(asset.get("asset") or "").upper()
+                    usd_value = _safe_float(asset.get("usd_value"))
+                    if (
+                        not symbol
+                        or symbol in STABLE_ASSETS
+                        or usd_value <= 0
+                    ):
                         continue
-                    holdings[symbol] = holdings.get(symbol, 0.0) + round(qty * last_close, 2)
+                    spot_holdings[symbol] = spot_holdings.get(symbol, 0.0) + round(usd_value, 2)
             except Exception as e:
                 logger.warning("Failed to fetch live spot balances for %s: %s", exchange_id, e)
-                warnings.append(
-                    f"Spot balances are currently unavailable for {credential.get('label') or exchange_id}."
-                )
+                if exchange_id == "binance" and environment == "testnet":
+                    warnings.append(
+                        f"Binance spot balances are unavailable for {credential.get('label') or exchange_id} because Binance Spot Testnet is isolated from Binance mainnet accounts."
+                    )
+                else:
+                    warnings.append(
+                        f"Spot balances are currently unavailable for {credential.get('label') or exchange_id}."
+                    )
 
-        if market_type in {"futures", "mixed"}:
+        if _mode_includes_futures(mode) and market_type in {"futures", "mixed"}:
             try:
                 positions = await fetch_open_positions(
                     exchange_id=exchange_id,
                     api_key=api_key,
                     api_secret=api_secret,
                     passphrase=passphrase,
-                    testnet=testnet,
+                    environment=environment,
                 )
                 for position in positions:
                     base_asset = _extract_base_asset(position.get("symbol", ""))
-                    contracts = _safe_float(position.get("contracts"))
-                    mark_price = _safe_float(position.get("mark_price"))
-                    notional_value = abs(contracts * mark_price)
+                    notional_value = abs(
+                        _safe_float(position.get("notional"))
+                        or (
+                            _safe_float(position.get("contracts"))
+                            * _safe_float(position.get("contractSize", 1))
+                            * _safe_float(position.get("mark_price"))
+                        )
+                    )
                     if (
                         not base_asset
                         or base_asset in STABLE_ASSETS
                         or notional_value <= 0
                     ):
                         continue
-                    holdings[base_asset] = holdings.get(base_asset, 0.0) + round(notional_value, 2)
+                    futures_holdings[base_asset] = futures_holdings.get(base_asset, 0.0) + round(notional_value, 2)
             except Exception as e:
                 logger.warning("Failed to fetch live futures positions for %s: %s", exchange_id, e)
                 warnings.append(
                     f"Futures positions are currently unavailable for {credential.get('label') or exchange_id}."
                 )
 
+    if mode == "spot":
+        holdings = _merge_holdings(spot_holdings)
+    elif mode == "future":
+        holdings = _merge_holdings(futures_holdings)
+    else:
+        holdings = _merge_holdings(spot_holdings, futures_holdings)
+
     return {
-        "holdings": {
-            asset: round(value, 2)
-            for asset, value in holdings.items()
-            if value > 0
-        },
+        "holdings": holdings,
+        "spot_holdings": _merge_holdings(spot_holdings),
+        "futures_holdings": _merge_holdings(futures_holdings),
         "warnings": warnings,
         "has_configured_connection": context["has_configured_connection"],
     }
@@ -281,14 +351,24 @@ async def _load_live_holdings_snapshot(user_id: ObjectId, scope: str = "all") ->
 
 # ── Endpoints ────────────────────────────────────────────────────────────
 
-async def _load_live_positions_snapshot(user_id: ObjectId) -> dict[str, Any]:
+async def _load_live_positions_snapshot(
+    user_id: ObjectId,
+    scope: str = "all",
+    mode: DisplayMode = "all",
+) -> dict[str, Any]:
     """
     Best-effort live open positions snapshot using server-side exchange access.
     Returns positions plus connection-state metadata for dashboard messaging.
     """
-    context = await _get_live_exchange_context(user_id)
+    context = await _get_live_exchange_context(user_id, scope=scope)
     credentials = context["credentials"]
     warnings = list(context["warnings"])
+    if mode == "spot":
+        return {
+            "positions": [],
+            "warnings": warnings,
+            "has_configured_connection": context["has_configured_connection"],
+        }
     if not credentials:
         return {
             "positions": [],
@@ -304,7 +384,7 @@ async def _load_live_positions_snapshot(user_id: ObjectId) -> dict[str, Any]:
         api_secret = credential["api_secret"]
         passphrase = credential.get("passphrase")
         market_type = credential.get("market_type", "mixed")
-        testnet = bool(credential.get("testnet"))
+        environment = str(credential.get("environment", "mainnet") or "mainnet").strip().lower()
 
         if market_type == "spot":
             continue
@@ -315,7 +395,7 @@ async def _load_live_positions_snapshot(user_id: ObjectId) -> dict[str, Any]:
                 api_key=api_key,
                 api_secret=api_secret,
                 passphrase=passphrase,
-                testnet=testnet,
+                environment=environment,
             )
             positions.extend(
                 _normalise_position_snapshot(position, exchange_id)
@@ -359,6 +439,7 @@ async def _build_dashboard_overview(user_id: ObjectId) -> dict[str, Any]:
     metrics_doc = await _get_latest_metrics_doc(user_id)
 
     live_overviews: list[dict[str, Any]] = []
+    spot_assets: list[dict[str, Any]] = []
     warnings: list[str] = []
     live_snapshot_at: Optional[datetime] = None
 
@@ -372,12 +453,22 @@ async def _build_dashboard_overview(user_id: ObjectId) -> dict[str, Any]:
                 api_key=credential["api_key"],
                 api_secret=credential["api_secret"],
                 passphrase=credential.get("passphrase"),
-                testnet=credential["testnet"],
+                environment=credential.get("environment", "mainnet"),
                 market_type=credential.get("market_type", "mixed"),
             )
             live_overviews.append(live_overview)
             live_snapshot_at = datetime.now(tz=timezone.utc)
             warnings.extend(live_overview.get("warnings", []))
+            exchange_id = credential["exchange_id"]
+            spot_assets.extend(
+                _normalise_spot_asset_snapshot(
+                    asset,
+                    exchange_id=exchange_id,
+                    connection_label=key_doc.get("label"),
+                )
+                for asset in live_overview.get("spot_assets", [])
+                if isinstance(asset, dict) and str(asset.get("asset") or "").strip()
+            )
         except EncryptionConfigError as e:
             logger.warning(
                 "Skipping live overview for %s/%s: %s",
@@ -404,6 +495,14 @@ async def _build_dashboard_overview(user_id: ObjectId) -> dict[str, Any]:
     total_unrealized_pnl = round(
         sum(_safe_float(item.get("total_unrealized_pnl_usd")) for item in live_overviews),
         2,
+    )
+    total_spot_value = round(
+        sum(_safe_float(item.get("spot_total_usd")) for item in live_overviews),
+        2,
+    )
+    spot_assets.sort(
+        key=lambda asset: _safe_float(asset.get("usd_value")),
+        reverse=True,
     )
 
     metrics_calculated_at = (
@@ -432,6 +531,9 @@ async def _build_dashboard_overview(user_id: ObjectId) -> dict[str, Any]:
         "status": "ok",
         "total_portfolio_value": total_portfolio_value,
         "total_unrealized_pnl": total_unrealized_pnl,
+        "spot_total_value": total_spot_value,
+        "spot_asset_count": len(spot_assets),
+        "spot_assets": spot_assets,
         "net_pnl_usd": round(_safe_float(metrics_doc.get("net_pnl_usd")) if metrics_doc else 0.0, 2),
         "discipline_score": (
             int(metrics_doc.get("discipline_score", {}).get("total", 0))
@@ -513,7 +615,7 @@ async def _refresh_dashboard_from_stored_key(user_id: ObjectId) -> dict[str, Any
                 api_key=credential["api_key"],
                 api_secret=credential["api_secret"],
                 passphrase=credential.get("passphrase"),
-                testnet=credential.get("testnet", False),
+                environment=credential.get("environment", "mainnet"),
                 market_type=credential.get("market_type", "futures"),
             )
             trade_sync = await fetch_and_sync_trades(
@@ -522,7 +624,7 @@ async def _refresh_dashboard_from_stored_key(user_id: ObjectId) -> dict[str, Any
                 api_key=credential["api_key"],
                 api_secret=credential["api_secret"],
                 passphrase=credential.get("passphrase"),
-                testnet=credential.get("testnet", False),
+                environment=credential.get("environment", "mainnet"),
                 market_type=credential.get("market_type", "futures"),
             )
 
@@ -576,7 +678,7 @@ async def _refresh_dashboard_from_stored_key(user_id: ObjectId) -> dict[str, Any
 
     engine_result = await run_quant_engine(user_id)
     if engine_result.get("status") == "no_data":
-        warnings.append(engine_result.get("message", "No trades were available for risk metrics."))
+        warnings.append(engine_result.get("message", "No closed positions were available for risk metrics."))
 
     finished_at = datetime.now(tz=timezone.utc)
     all_ok = all(r.get("status") == "ok" for r in results)
@@ -904,6 +1006,7 @@ async def get_contagion_graph(
     user_id: str,
     demo: bool = Query(False, description="If true, use demo holdings when live holdings are unavailable"),
     scope: str = Query("all", description="Filter holdings by exchange (all, binance, okx)"),
+    mode: str = Query("all", description="Display mode: all, spot, future"),
 ):
     """
     Portfolio Contagion Map endpoint.
@@ -923,12 +1026,14 @@ async def get_contagion_graph(
     scope = scope.strip().lower()
     if scope not in ["all", "binance", "okx"]:
         raise HTTPException(status_code=400, detail="Invalid scope parameter. Must be all, binance, or okx.")
+    display_mode = _normalise_display_mode(mode)
 
     scope_label_map = {"all": "Portfolio", "binance": "Binance", "okx": "OKX"}
     scope_label = scope_label_map[scope]
+    mode_label = DISPLAY_MODE_LABELS[display_mode]
     market_data_source = "binance" if scope == "all" else scope
 
-    holdings_snapshot = await _load_live_holdings_snapshot(uid, scope=scope)
+    holdings_snapshot = await _load_live_holdings_snapshot(uid, scope=scope, mode=display_mode)
     positions = holdings_snapshot["holdings"]
     warnings = holdings_snapshot["warnings"]
     has_configured_connection = holdings_snapshot["has_configured_connection"]
@@ -966,6 +1071,8 @@ async def get_contagion_graph(
             "warnings": warnings,
             "scope": scope,
             "scope_label": scope_label,
+            "mode": display_mode,
+            "mode_label": mode_label,
             "market_data_source": market_data_source,
             "data": calculate_contagion_graph({}, {}, window_days=30),
         }
@@ -993,6 +1100,8 @@ async def get_contagion_graph(
         "warnings": warnings,
         "scope": scope,
         "scope_label": scope_label,
+        "mode": display_mode,
+        "mode_label": mode_label,
         "market_data_source": market_data_source,
         "data": graph_data,
     }

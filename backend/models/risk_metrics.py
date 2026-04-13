@@ -90,6 +90,8 @@ class ExchangeBreakdown(BaseModel):
     trade_count: int = 0
     win_rate_pct: DecimalStr = Field(default="0")
     avg_leverage: DecimalStr = Field(default="0")
+    profit_factor: DecimalStr = Field(default="0")
+    sharpe_ratio: DecimalStr = Field(default="0")
     net_pnl_usd: DecimalStr = Field(default="0")
 
 

@@ -14,6 +14,7 @@ import type {
   ContagionSourceState,
   ContagionSummary,
   ContagionScope,
+  ContagionMode,
 } from "./contagion/types";
 
 // ── Props ────────────────────────────────────────────────────────────────
@@ -56,6 +57,12 @@ const SCOPE_LABELS: Record<ContagionScope, string> = {
   okx: "OKX",
 };
 
+const MODE_LABELS: Record<ContagionMode, string> = {
+  all: "All",
+  spot: "Spot",
+  future: "Future",
+};
+
 function isContagionScope(value: unknown): value is ContagionScope {
   return value === "all" || value === "binance" || value === "okx";
 }
@@ -64,12 +71,26 @@ function getScopeLabel(scope: ContagionScope): string {
   return SCOPE_LABELS[scope];
 }
 
-function getScopeSubtitle(scope: ContagionScope, scopeLabel: string): string {
-  if (scope === "all") {
-    return "Portfolio-wide cross-exchange dependency analysis";
-  }
+function isContagionMode(value: unknown): value is ContagionMode {
+  return value === "all" || value === "spot" || value === "future";
+}
 
-  return `${scopeLabel}-only dependency view`;
+function getModeLabel(mode: ContagionMode): string {
+  return MODE_LABELS[mode];
+}
+
+function getModeSubtitle(mode: ContagionMode, modeLabel: string): string {
+  if (mode === "all") {
+    return "Cross-market dependency analysis across spot holdings and futures underlyings";
+  }
+  if (mode === "spot") {
+    return `${modeLabel} holdings dependency view`;
+  }
+  return `${modeLabel} underlying dependency view from open futures exposure`;
+}
+
+function getHeaderSubtitle(scopeLabel: string, mode: ContagionMode, modeLabel: string): string {
+  return `${scopeLabel} · ${getModeSubtitle(mode, modeLabel)}`;
 }
 
 /**
@@ -203,7 +224,7 @@ function ViewToggle({
   );
 }
 
-// ── Scope Toggle ─────────────────────────────────────────────────────────
+// ── Scope Toggle ────────────────────────────────────────────────────────
 
 function ScopeToggle({ scope, onChange }: { scope: ContagionScope; onChange: (s: ContagionScope) => void }) {
   return (
@@ -228,6 +249,29 @@ function ScopeToggle({ scope, onChange }: { scope: ContagionScope; onChange: (s:
         onClick={() => onChange("okx")}
       >
         OKX
+      </button>
+    </div>
+  );
+}
+
+// ── Mode Toggle ─────────────────────────────────────────────────────────
+
+function ModeToggle({ mode, onChange }: { mode: ContagionMode; onChange: (s: ContagionMode) => void }) {
+  return (
+    <div className="view-toggle">
+      <button
+        type="button"
+        className={`view-toggle-btn ${mode === "spot" ? "active" : ""}`}
+        onClick={() => onChange("spot")}
+      >
+        Spot
+      </button>
+      <button
+        type="button"
+        className={`view-toggle-btn ${mode === "future" ? "active" : ""}`}
+        onClick={() => onChange("future")}
+      >
+        Future
       </button>
     </div>
   );
@@ -331,6 +375,9 @@ function ModuleHeader({
   scope,
   scopeLabel,
   onScopeChange,
+  mode,
+  modeLabel,
+  onModeChange,
   marketDataNote,
 }: {
   regime: { label: "calm" | "elevated" | "stress"; reason: string };
@@ -343,11 +390,16 @@ function ModuleHeader({
   scope?: ContagionScope;
   scopeLabel?: string;
   onScopeChange?: (s: ContagionScope) => void;
+  mode?: ContagionMode;
+  modeLabel?: string;
+  onModeChange?: (s: ContagionMode) => void;
   marketDataNote?: string | null;
 }) {
   const activeScope = scope ?? "all";
   const activeScopeLabel = scopeLabel || getScopeLabel(activeScope);
-  const subtitle = getScopeSubtitle(activeScope, activeScopeLabel);
+  const activeMode = mode ?? "all";
+  const activeModeLabel = modeLabel || getModeLabel(activeMode);
+  const subtitle = getHeaderSubtitle(activeScopeLabel, activeMode, activeModeLabel);
 
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, flexWrap: "wrap", gap: 10 }}>
@@ -373,6 +425,9 @@ function ModuleHeader({
         )}
         {showToggle && scope !== undefined && onScopeChange && (
           <ScopeToggle scope={scope} onChange={onScopeChange} />
+        )}
+        {showToggle && mode !== undefined && onModeChange && (
+          <ModeToggle mode={mode} onChange={onModeChange} />
         )}
         <RegimePill label={regime.label} reason={regime.reason} />
         <span style={{ fontSize: 9, color: "#c3c5d7", whiteSpace: "nowrap" }}>
@@ -467,6 +522,9 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   const [scope, setScope] = useState<ContagionScope>("all");
   const [responseScope, setResponseScope] = useState<ContagionScope>("all");
   const [scopeLabel, setScopeLabel] = useState<string>(getScopeLabel("all"));
+  const [mode, setMode] = useState<ContagionMode>("future");
+  const [responseMode, setResponseMode] = useState<ContagionMode>("future");
+  const [modeLabel, setModeLabel] = useState<string>(getModeLabel("future"));
   const [marketDataSource, setMarketDataSource] = useState<string | null>(null);
 
   const loadContagion = useCallback(async () => {
@@ -478,9 +536,11 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
       setWarnings([]);
       setResponseScope(scope);
       setScopeLabel(getScopeLabel(scope));
+      setResponseMode(mode);
+      setModeLabel(getModeLabel(mode));
       setMarketDataSource(null);
 
-      const query = new URLSearchParams({ scope });
+      const query = new URLSearchParams({ scope, mode });
       const res = await fetch(buildApiUrl(`/api/v1/dashboard/${userId}/contagion?${query.toString()}`), { cache: "no-store" });
       if (!res.ok) throw new Error(`API error: ${res.status}`);
       const json = (await res.json()) as ContagionApiResponse;
@@ -489,9 +549,16 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
         typeof json.scope_label === "string" && json.scope_label.trim().length > 0
           ? json.scope_label.trim()
           : getScopeLabel(nextScope);
+      const nextMode = isContagionMode(json.mode) ? json.mode : mode;
+      const nextModeLabel =
+        typeof json.mode_label === "string" && json.mode_label.trim().length > 0
+          ? json.mode_label.trim()
+          : getModeLabel(nextMode);
 
       setResponseScope(nextScope);
       setScopeLabel(nextScopeLabel);
+      setResponseMode(nextMode);
+      setModeLabel(nextModeLabel);
       setMarketDataSource(
         typeof json.market_data_source === "string" && json.market_data_source.trim().length > 0
           ? json.market_data_source.trim()
@@ -521,12 +588,14 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
       setWarnings([]);
       setResponseScope(scope);
       setScopeLabel(getScopeLabel(scope));
+      setResponseMode(mode);
+      setModeLabel(getModeLabel(mode));
       setMarketDataSource(null);
       setError(err instanceof Error ? err.message : "Failed to load contagion data");
     } finally {
       setIsLoading(false);
     }
-  }, [userId, scope]);
+  }, [userId, scope, mode]);
 
   useEffect(() => { void loadContagion(); }, [loadContagion, refreshToken]);
 
@@ -548,6 +617,8 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
 
   const activeScope = responseScope;
   const activeScopeLabel = scopeLabel || getScopeLabel(activeScope);
+  const activeMode = responseMode;
+  const activeModeLabel = modeLabel || getModeLabel(activeMode);
   const marketDataNote = useMemo(() => {
     if (!marketDataSource) {
       return null;
@@ -574,14 +645,14 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   // ── Error ─────────────────────────────────────────────────────────
   if (error || !data) {
     const errorTitle =
-      activeScope === "all"
+      activeMode === "all"
         ? "Failed to Load Contagion Data"
-        : `Failed to Load ${activeScopeLabel} Contagion Data`;
+        : `Failed to Load ${activeModeLabel} Contagion Data`;
     const errorBody =
       error ||
-      (activeScope === "all"
+      (activeMode === "all"
         ? "RiskHub could not load the portfolio-wide contagion view."
-        : `RiskHub could not load the ${activeScopeLabel} contagion view.`);
+        : `RiskHub could not load the ${activeModeLabel} contagion view.`);
 
     return (
       <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
@@ -592,12 +663,13 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
               Portfolio Contagion Map
             </h3>
             <p style={{ fontSize: 11, color: "#c3c5d7", margin: "2px 0 0", lineHeight: 1.3 }}>
-              {getScopeSubtitle(activeScope, activeScopeLabel)}
+              {getHeaderSubtitle(activeScopeLabel, activeMode, activeModeLabel)}
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
             <ViewToggle view={graphView} onChange={setGraphView} disabled />
             <ScopeToggle scope={scope} onChange={setScope} />
+            <ModeToggle mode={mode} onChange={setMode} />
           </div>
         </div>
         <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -615,11 +687,8 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   }
 
   const { regime, summary, nodes, edges, clusters, display } = data;
-  // For scoped exchange views (binance / okx), the backend already pre-filters to
-  // that exchange's holdings, so a 0.5 % threshold can silently drop valid small
-  // positions and make a renderable 4-asset graph look like a concentration fallback.
-  // Threshold: 0 % in scoped mode (all backend nodes are intentional), 0.5 % in
-  // All-scope mode to filter out dust/stablecoin noise across exchanges.
+  // Exchange-scoped views already come back pre-filtered, so keep every node there.
+  // Only the all-exchange view uses a small threshold to suppress dust.
   const meaningfulThreshold = activeScope === "all" ? 0.5 : 0;
   const meaningfulNodes = nodes.filter((n) => n.weight_pct > meaningfulThreshold);
   const shouldShowLiveWarningBanner =
@@ -629,14 +698,14 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   // ── Source state fallbacks ─────────────────────────────────────────
   if (sourceState === "no_connection" || sourceState === "error") {
     const title = sourceState === "no_connection"
-      ? activeScope === "all"
+      ? activeMode === "all"
         ? "Connect an Exchange to Generate This Map"
-        : `Connect ${activeScopeLabel} to Generate This Map`
+        : `Connect ${activeScopeLabel} ${activeModeLabel} to Generate This Map`
       : "Live Holdings Are Unavailable";
     const body = sourceState === "no_connection"
       ? (activeScope === "all"
           ? "Manage connections and refresh the dashboard to calculate a portfolio-wide contagion map from backend-managed holdings."
-          : `Make sure you have an active ${activeScopeLabel} connection to view this contagion scope.`)
+          : `Make sure ${activeScopeLabel} has enough live ${activeModeLabel.toLowerCase()} data to view this contagion mode.`)
       : statusMessage || "RiskHub could not read live holdings for contagion analysis right now.";
     return (
       <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
@@ -649,6 +718,9 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
+          mode={mode}
+          modeLabel={activeModeLabel}
+          onModeChange={setMode}
           marketDataNote={marketDataNote}
           showToggle
         />
@@ -662,7 +734,7 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     const fallbackBody = statusMessage || (sourceState === "insufficient_holdings"
       ? activeScope === "all"
         ? "Contagion mapping needs at least two meaningful non-stable holdings across active exchanges."
-        : `Contagion mapping needs at least two meaningful non-stable holdings in ${activeScopeLabel}.`
+        : `Contagion mapping needs at least two meaningful assets in ${activeScopeLabel} for ${activeModeLabel.toLowerCase()} mode.`
       : "Contagion mapping needs at least two meaningful holdings.");
     return (
       <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
@@ -675,6 +747,9 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
+          mode={mode}
+          modeLabel={activeModeLabel}
+          onModeChange={setMode}
           marketDataNote={marketDataNote}
           showToggle
         />
@@ -696,6 +771,9 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
+          mode={mode}
+          modeLabel={activeModeLabel}
+          onModeChange={setMode}
           marketDataNote={marketDataNote}
           showToggle
         />
@@ -721,6 +799,9 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
             scope={scope}
             scopeLabel={activeScopeLabel}
             onScopeChange={setScope}
+            mode={mode}
+            modeLabel={activeModeLabel}
+            onModeChange={setMode}
             marketDataNote={marketDataNote}
             showToggle
           />
@@ -748,6 +829,9 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
+          mode={mode}
+          modeLabel={activeModeLabel}
+          onModeChange={setMode}
           marketDataNote={marketDataNote}
           showToggle
         />
@@ -771,6 +855,9 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
+          mode={mode}
+          modeLabel={activeModeLabel}
+          onModeChange={setMode}
           marketDataNote={marketDataNote}
           showToggle
         />

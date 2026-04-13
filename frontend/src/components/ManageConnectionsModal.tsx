@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import { KeyRound, Loader2, RefreshCw, ShieldCheck, X } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { KeyRound, Loader2, RefreshCw, ShieldCheck, Trash2, X } from "lucide-react";
 import {
   buildConnectionLabel,
   formatEnumLabel,
@@ -56,6 +56,29 @@ const EMPTY_FORM = {
   apiSecret: "",
   passphrase: "",
   label: "",
+};
+
+const MARKET_TYPE_OPTIONS = [
+  {
+    value: "mixed",
+    label: "Mixed",
+    description: "Reads spot balances and futures positions from one connection.",
+  },
+  {
+    value: "futures",
+    label: "Futures",
+    description: "Reads futures positions and PnL; spot balances are best-effort.",
+  },
+  {
+    value: "spot",
+    label: "Spot",
+    description: "Reads spot balances only.",
+  },
+];
+
+const ENVIRONMENT_OPTIONS_BY_EXCHANGE: Record<SupportedExchangeId, string[]> = {
+  binance: ["mainnet", "demo", "testnet"],
+  okx: ["mainnet", "testnet"],
 };
 
 async function readErrorMessage(response: Response): Promise<string> {
@@ -121,20 +144,24 @@ export function ManageConnectionsModal({
   const [environment, setEnvironment] = useState<string>(
     getExchangeMeta("binance").defaultEnvironment,
   );
+  const [marketType, setMarketType] = useState<string>("mixed");
   const [label, setLabel] = useState(EMPTY_FORM.label);
   const [apiKey, setApiKey] = useState(EMPTY_FORM.apiKey);
   const [apiSecret, setApiSecret] = useState(EMPTY_FORM.apiSecret);
   const [passphrase, setPassphrase] = useState(EMPTY_FORM.passphrase);
+  const [deletingConnectionKey, setDeletingConnectionKey] = useState<string | null>(null);
 
   const selectedExchangeMeta = getExchangeMeta(selectedExchangeId);
   const environmentOptions =
-    selectedExchangeId === "okx" ? ["mainnet", "testnet"] : ["testnet", "mainnet"];
+    ENVIRONMENT_OPTIONS_BY_EXCHANGE[selectedExchangeId] ?? [selectedExchangeMeta.defaultEnvironment];
   const activeConnections = connections.filter((connection) => connection.is_active);
   const selectedExchangeConnection = activeConnections.find(
-    (connection) => connection.exchange_id.toLowerCase() === selectedExchangeId,
+    (connection) =>
+      connection.exchange_id.toLowerCase() === selectedExchangeId &&
+      (connection.environment || "").toLowerCase() === environment.toLowerCase(),
   );
 
-  async function loadConnections() {
+  const loadConnections = useCallback(async () => {
     setIsLoadingConnections(true);
     setLoadError(null);
 
@@ -158,11 +185,12 @@ export function ManageConnectionsModal({
     } finally {
       setIsLoadingConnections(false);
     }
-  }
+  }, [userId]);
 
   function resetSensitiveFields(nextExchangeId: SupportedExchangeId = "binance") {
     setSelectedExchangeId(nextExchangeId);
     setEnvironment(getExchangeMeta(nextExchangeId).defaultEnvironment);
+    setMarketType("mixed");
     setLabel(EMPTY_FORM.label);
     setApiKey(EMPTY_FORM.apiKey);
     setApiSecret(EMPTY_FORM.apiSecret);
@@ -175,6 +203,7 @@ export function ManageConnectionsModal({
       connection.exchange_id.toLowerCase() === "okx" ? "okx" : "binance";
     setSelectedExchangeId(normalizedExchangeId);
     setEnvironment(connection.environment || getExchangeMeta(normalizedExchangeId).defaultEnvironment);
+    setMarketType(connection.market_type || "mixed");
     setLabel(connection.label || "");
     setApiKey("");
     setApiSecret("");
@@ -192,7 +221,7 @@ export function ManageConnectionsModal({
 
     setConnections(initialConnections);
     void loadConnections();
-  }, [initialConnections, isOpen, userId]);
+  }, [initialConnections, isOpen, loadConnections]);
 
   if (!isOpen) {
     return null;
@@ -217,10 +246,10 @@ export function ManageConnectionsModal({
       await onSubmit({
         exchangeId: selectedExchangeId,
         environment,
-        marketType: "futures",
+        marketType,
         label:
           label.trim() ||
-          buildConnectionLabel(selectedExchangeId, environment, "futures"),
+          buildConnectionLabel(selectedExchangeId, environment, marketType),
         apiKey: apiKey.trim(),
         apiSecret: apiSecret.trim(),
         passphrase: selectedExchangeMeta.requiresPassphrase ? passphrase.trim() : null,
@@ -234,6 +263,43 @@ export function ManageConnectionsModal({
       setFormError(
         error instanceof Error ? error.message : "Failed to save the exchange connection.",
       );
+    }
+  }
+
+  async function handleDeleteConnection(connection: ExchangeConnection) {
+    const exchangeId = connection.exchange_id.toLowerCase();
+    const nextEnvironment = (connection.environment || "mainnet").toLowerCase();
+    const connectionKey = `${exchangeId}:${nextEnvironment}`;
+
+    const shouldDelete = window.confirm(
+      `Delete saved API credentials for ${formatEnumLabel(exchangeId)} ${formatEnumLabel(nextEnvironment)}?`,
+    );
+    if (!shouldDelete) {
+      return;
+    }
+
+    setDeletingConnectionKey(connectionKey);
+    setFormError(null);
+
+    try {
+      const response = await fetch(
+        buildApiUrl(
+          `/api/v1/exchange-keys/${userId}/connection?exchange_id=${encodeURIComponent(exchangeId)}&environment=${encodeURIComponent(nextEnvironment)}`,
+        ),
+        { method: "DELETE" },
+      );
+      if (!response.ok) {
+        throw new Error(await readErrorMessage(response));
+      }
+
+      await onRefreshData();
+      await loadConnections();
+    } catch (error) {
+      setFormError(
+        error instanceof Error ? error.message : "Failed to delete the selected connection.",
+      );
+    } finally {
+      setDeletingConnectionKey(null);
     }
   }
 
@@ -252,9 +318,9 @@ export function ManageConnectionsModal({
               Manage Connections
             </h2>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-text-secondary">
-              Save one active futures account per exchange for Binance and OKX. The
-              frontend submits credentials only during save, while the backend
-              validates, encrypts, stores, and refreshes portfolio-wide data.
+              Save one active Binance or OKX connection per exchange. The frontend
+              submits credentials only during save, while the backend validates,
+              encrypts, stores, and refreshes spot balances plus futures data.
             </p>
           </div>
 
@@ -293,8 +359,8 @@ export function ManageConnectionsModal({
                   Current Exchange State
                 </h3>
                 <p className="mt-1 text-sm text-text-secondary">
-                  {activeConnections.length} active of {SUPPORTED_EXCHANGE_IDS.length} supported
-                  exchanges in this pass.
+                  {activeConnections.length} active connection
+                  {activeConnections.length === 1 ? "" : "s"} across Binance and OKX.
                 </p>
               </div>
               <button
@@ -330,9 +396,8 @@ export function ManageConnectionsModal({
                     No exchange connections saved yet
                   </p>
                   <p className="mt-2 max-w-md text-sm leading-6 text-text-secondary">
-                    Add a Binance or OKX futures connection to unlock the
-                    aggregated dashboard, by-exchange PnL rows, and exchange-owned
-                    open positions.
+                    Add a Binance or OKX connection to unlock aggregated spot
+                    balances, by-exchange PnL rows, and live positions.
                   </p>
                 </div>
               ) : (
@@ -379,13 +444,26 @@ export function ManageConnectionsModal({
                           </p>
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => prepareConnectionUpdate(connection)}
-                          className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-text-primary transition-colors hover:bg-white/[0.06]"
-                        >
-                          Replace Credentials
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => prepareConnectionUpdate(connection)}
+                            className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-text-primary transition-colors hover:bg-white/[0.06]"
+                          >
+                            Replace Credentials
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleDeleteConnection(connection);
+                            }}
+                            disabled={deletingConnectionKey === `${connection.exchange_id.toLowerCase()}:${(connection.environment || "mainnet").toLowerCase()}`}
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-danger transition-colors hover:bg-danger/15 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Trash2 size={14} />
+                            Delete
+                          </button>
+                        </div>
                       </div>
 
                       <div className="mt-4 grid gap-3 sm:grid-cols-[auto_auto_1fr]">
@@ -412,8 +490,8 @@ export function ManageConnectionsModal({
                 Add or Update a Connection
               </h3>
               <p className="mt-1 text-sm text-text-secondary">
-                One active futures account per exchange. Saving the same exchange
-                again replaces the active connection for that exchange.
+                One active connection per exchange and environment. Saving the same
+                venue + environment again replaces that connection.
               </p>
             </div>
 
@@ -473,15 +551,36 @@ export function ManageConnectionsModal({
                       </option>
                     ))}
                   </select>
+                  {selectedExchangeId === "binance" && environment === "testnet" ? (
+                    <span className="text-xs leading-5 text-warning-accent">
+                      Binance Spot Testnet is isolated from Binance mainnet balances.
+                    </span>
+                  ) : null}
+                  {selectedExchangeId === "binance" && environment === "demo" ? (
+                    <span className="text-xs leading-5 text-primary-light">
+                      Use API keys generated from demo.binance.com for this environment.
+                    </span>
+                  ) : null}
                 </label>
 
                 <div className="flex flex-col gap-2">
                   <span className="text-xs font-semibold uppercase tracking-[0.2em] text-text-secondary">
                     Market Type
                   </span>
-                  <div className="rounded-xl border border-white/10 bg-surface-low px-4 py-3 text-sm font-medium text-text-primary">
-                    Futures
-                  </div>
+                  <select
+                    value={marketType}
+                    onChange={(event) => setMarketType(event.target.value)}
+                    className="rounded-xl border border-white/10 bg-surface-low px-4 py-3 text-sm text-text-primary outline-none transition-colors focus:border-primary/40"
+                  >
+                    {MARKET_TYPE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="text-xs leading-5 text-text-secondary">
+                    {MARKET_TYPE_OPTIONS.find((option) => option.value === marketType)?.description}
+                  </span>
                 </div>
 
                 <label className="flex flex-col gap-2 md:col-span-2">
@@ -491,7 +590,7 @@ export function ManageConnectionsModal({
                   <input
                     value={label}
                     onChange={(event) => setLabel(event.target.value)}
-                    placeholder={buildConnectionLabel(selectedExchangeId, environment, "futures")}
+                    placeholder={buildConnectionLabel(selectedExchangeId, environment, marketType)}
                     className="rounded-xl border border-white/10 bg-surface-low px-4 py-3 text-sm text-text-primary outline-none transition-colors placeholder:text-text-secondary/60 focus:border-primary/40"
                   />
                 </label>
@@ -552,8 +651,8 @@ export function ManageConnectionsModal({
 
               {selectedExchangeConnection ? (
                 <div className="rounded-xl border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary-light">
-                  Saving {selectedExchangeMeta.label} again replaces the current
-                  active {selectedExchangeMeta.label} connection for this user.
+                  Saving {selectedExchangeMeta.label} {formatEnumLabel(environment)} again
+                  replaces the current active connection for that environment.
                 </div>
               ) : null}
 
@@ -564,10 +663,9 @@ export function ManageConnectionsModal({
               ) : null}
 
               <div className="rounded-xl border border-white/5 bg-main-bg/40 px-4 py-3 text-xs leading-6 text-text-secondary">
-                Connection metadata is rendered from backend responses. Disable or
-                delete actions are not shown here because the current backend
-                contract exposes list and connect flows, not explicit disable
-                routes.
+                Connection metadata is rendered from backend responses. Deleting a
+                connection removes the stored encrypted API credentials for that
+                exchange + environment.
               </div>
 
               <div className="flex flex-col gap-3 border-t border-white/5 pt-5 sm:flex-row sm:items-center sm:justify-between">
@@ -589,7 +687,7 @@ export function ManageConnectionsModal({
                   {isSubmitting
                     ? "Validating and Saving..."
                     : selectedExchangeConnection
-                      ? `Replace ${selectedExchangeMeta.label} Connection`
+                      ? `Replace ${selectedExchangeMeta.label} ${formatEnumLabel(environment)} Connection`
                       : `Add ${selectedExchangeMeta.label} Connection`}
                 </button>
               </div>
