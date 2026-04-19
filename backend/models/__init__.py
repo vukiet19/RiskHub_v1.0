@@ -34,6 +34,11 @@ from .alerts_log import (
     TriggerContext,
     DeliveryStatus,
 )
+from .risk_identity_profile import (
+    EligibilitySnapshot,
+    LeverageSnapshot,
+    RiskIdentityProfileDocument,
+)
 
 __all__ = [
     # users
@@ -57,4 +62,8 @@ __all__ = [
     "AlertsLogDocument",
     "TriggerContext",
     "DeliveryStatus",
+    # risk_identity_profiles
+    "EligibilitySnapshot",
+    "LeverageSnapshot",
+    "RiskIdentityProfileDocument",
 ]

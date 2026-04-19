@@ -42,35 +42,35 @@ export function SpotAssets({
     : partialWarnings[0] || "No live spot assets were found across active exchanges.";
 
   return (
-    <div className="glass-card relative z-10 rounded-2xl border border-white/5 p-6 shadow-xl transition-all hover:border-white/10 group">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <h3 className="flex items-center gap-2 text-lg font-semibold text-white">
-          <Coins size={18} className="text-primary" />
+    <div className="glass-card group relative z-10 flex h-full min-h-[280px] flex-col rounded-2xl border border-white/5 p-3 shadow-xl transition-all hover:border-white/10">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+          <Coins size={16} className="text-primary" />
           <span>Spot Assets</span>
         </h3>
         <div className="text-right">
-          <div className="font-mono text-base font-bold tracking-tight text-white">
+          <div className="font-mono text-[13px] font-bold tracking-tight text-white">
             ${totalSpotValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
-          <div className="text-[10px] uppercase tracking-[0.18em] text-text-secondary">
+          <div className="text-[8px] uppercase tracking-[0.14em] text-text-secondary">
             {isLoading ? "Loading..." : `${assets.length} assets`}
           </div>
         </div>
       </div>
 
-      <div className="flex flex-col gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
         {!isLoading && partialWarnings.length > 0 && assets.length > 0 ? (
-          <div className="rounded-xl border border-warning-accent/30 bg-warning-accent/10 px-4 py-3 text-sm text-warning-accent">
+          <div className="rounded-lg border border-warning-accent/30 bg-warning-accent/10 px-2.5 py-2 text-[11px] text-warning-accent">
             {partialWarnings[0]}
           </div>
         ) : null}
 
         {isLoading ? (
-          <div className="py-10 text-center text-sm text-gray-500 animate-pulse">
+          <div className="py-6 text-center text-xs text-gray-500 animate-pulse">
             Fetching live spot assets...
           </div>
         ) : assets.length === 0 ? (
-          <div className="py-10 text-center text-sm italic text-gray-500">{emptyStateMessage}</div>
+          <div className="py-6 text-center text-xs italic text-gray-500">{emptyStateMessage}</div>
         ) : (
           assets.map((asset, index) => {
             const exchangeMeta = getExchangeMeta(asset.exchange_id);
@@ -86,36 +86,47 @@ export function SpotAssets({
             return (
               <div
                 key={`${asset.exchange_id ?? "unknown"}-${asset.asset}-${index}`}
-                className="rounded-xl border border-white/5 bg-white/[0.03] p-4 backdrop-blur-sm transition-colors hover:bg-white/[0.06]"
+                className="rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2 backdrop-blur-sm transition-colors hover:bg-white/[0.06]"
               >
-                <div className="flex items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="font-bold tracking-wide text-white">{asset.asset}</div>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <div className="font-mono text-[13px] font-bold tracking-tight text-white">{asset.asset}</div>
                       <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${exchangeMeta.badgeClassName}`}
+                        className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] ${exchangeMeta.badgeClassName}`}
                       >
                         <span className={`h-1.5 w-1.5 rounded-full ${exchangeMeta.badgeDotClassName}`} />
                         {exchangeMeta.label}
                       </span>
                       {asset.is_stable ? (
-                        <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-secondary">
+                        <span className="rounded-full border border-white/10 bg-white/5 px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-text-secondary">
                           Stable
                         </span>
                       ) : null}
                     </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-text-secondary">
-                      <span>{total.toLocaleString(undefined, { maximumFractionDigits: 8 })} total</span>
-                      {free > 0 ? <span>{free.toLocaleString(undefined, { maximumFractionDigits: 8 })} free</span> : null}
-                      {used > 0 ? <span>{used.toLocaleString(undefined, { maximumFractionDigits: 8 })} locked</span> : null}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[9px] text-text-secondary">
+                      <span className="font-mono text-text-primary">
+                        {total.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                      </span>
+                      <span>Total</span>
+                      {free > 0 ? (
+                        <span className="font-mono text-text-secondary/90">
+                          Free {free.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                        </span>
+                      ) : null}
+                      {used > 0 ? (
+                        <span className="font-mono text-text-secondary/90">
+                          Locked {used.toLocaleString(undefined, { maximumFractionDigits: 6 })}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
 
                   <div className="text-right">
-                    <div className="font-mono text-base font-bold tracking-tight text-white">
+                    <div className="font-mono text-[13px] font-bold tracking-tight text-white">
                       ${usdValue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </div>
-                    <div className="mt-1 text-[10px] uppercase tracking-[0.18em] text-text-secondary">
+                    <div className="mt-0.5 text-[8px] uppercase tracking-[0.14em] text-text-secondary">
                       {lastPrice !== null && Number.isFinite(lastPrice)
                         ? `$${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 8 })}`
                         : asset.pricing_status === "unpriced"

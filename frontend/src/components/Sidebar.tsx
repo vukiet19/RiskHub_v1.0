@@ -10,7 +10,6 @@ import {
   LayoutDashboard,
   Menu,
   Settings,
-  Sparkles,
 } from "lucide-react";
 
 interface SidebarProps {
@@ -55,7 +54,7 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           icon={<LayoutDashboard size={18} />}
           label="Dashboard"
           href="/dashboard"
-          active={pathname === "/dashboard"}
+          active={pathname === "/dashboard" || pathname === "/"}
           collapsed={collapsed}
         />
         <NavItem
@@ -68,14 +67,15 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
         <NavItem
           icon={<Fingerprint size={18} />}
           label="SBT Identity"
-          iconFallback={<Sparkles size={18} />}
-          disabled
+          href="/sbt-identity"
+          active={pathname.startsWith("/sbt-identity")}
           collapsed={collapsed}
         />
         <NavItem
           icon={<History size={18} />}
           label="Alert History"
-          disabled
+          href="/alert-history"
+          active={pathname.startsWith("/alert-history")}
           collapsed={collapsed}
         />
         <NavItem
@@ -85,33 +85,6 @@ export function Sidebar({ collapsed = false, onToggle }: SidebarProps) {
           collapsed={collapsed}
         />
       </nav>
-      
-      {!collapsed && (
-        <div className="p-6 mt-auto whitespace-nowrap">
-          <div className="bg-white/[0.03] border border-white/5 rounded-xl p-4">
-            <h4 className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-4">Backend Sync Flow</h4>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-gray-300 font-medium">Credentials</span>
-                <div className="flex items-center gap-2 bg-primary/10 px-2 py-0.5 rounded-full border border-primary/20 shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary"></span>
-                  <span className="text-[9px] uppercase tracking-wider text-primary font-bold">Encrypted</span>
-                </div>
-              </div>
-              <div className="flex justify-between items-center gap-4">
-                <span className="text-sm text-gray-300 font-medium whitespace-nowrap">Exchange Data</span>
-                <div className="flex items-center gap-2 bg-white/5 px-2 py-0.5 rounded-full border border-white/10 shrink-0">
-                  <span className="w-1.5 h-1.5 rounded-full bg-warning-accent"></span>
-                  <span className="text-[9px] uppercase tracking-wider text-gray-300 font-bold whitespace-nowrap">Header Action</span>
-                </div>
-              </div>
-            </div>
-            <p className="mt-4 text-xs leading-5 text-text-secondary whitespace-normal">
-              Use Manage Connections to save one active Binance or OKX connection per exchange, then refresh to pull backend-managed spot balances, positions, contagion inputs, and aggregated overview data.
-            </p>
-          </div>
-        </div>
-      )}
     </aside>
   );
 }

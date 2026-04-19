@@ -1,0 +1,110 @@
+INFO:     Started server process [30396]
+INFO:     Waiting for application startup.
+2026-04-19 00:22:58,944 | INFO     | database | Connecting to MongoDB at mongodb://localhost:27017 (db=riskhub) ...
+2026-04-19 00:22:59,228 | INFO     | database | MongoDB connection established OK
+2026-04-19 00:22:59,229 | INFO     | database | Ensuring MongoDB indexes ...
+2026-04-19 00:22:59,243 | INFO     | database | All indexes ensured OK
+2026-04-19 00:22:59,243 | INFO     | riskhub | RiskHub backend is ready.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-04-19 00:24:03,844 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:03,851 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:03,859 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:03,867 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:03,872 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:03,877 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:04,547 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:05,989 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+INFO:     127.0.0.1:57106 - "WebSocket /ws/alerts/64f1a2b3c4d5e6f7a8b9c0d1" [accepted]
+2026-04-19 00:24:05,991 | INFO     | riskhub.ws | WS connected: user=64f1a2b3c4d5e6f7a8b9c0d1 (total connections for user: 1)
+INFO:     connection open
+2026-04-19 00:24:06,275 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:06,540 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:11,004 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:11,015 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:11,025 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:11,035 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:14,326 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:14,330 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:15,533 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:15,544 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:16,082 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:16,886 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:16,899 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:18,095 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:19,044 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:19,416 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:20,234 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:20,236 | WARNING  | riskhub.engine.correlation | No OHLCV data provided for correlation engine.
+2026-04-19 00:24:20,254 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:21,044 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:21,047 | WARNING  | riskhub.engine.correlation | No OHLCV data provided for correlation engine.
+2026-04-19 00:24:22,089 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:22,102 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:27,503 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:28,415 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:29,637 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:29,952 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:29,959 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:31,044 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:31,051 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:33,018 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:33,288 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:33,293 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:33,532 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:34,500 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:34,765 | WARNING  | riskhub.engine.correlation | No OHLCV data provided for correlation engine.
+2026-04-19 00:24:36,037 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:36,047 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:37,853 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:39,501 | WARNING  | riskhub.engine.correlation | No OHLCV data provided for correlation engine.
+2026-04-19 00:24:42,395 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:42,405 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+INFO:     127.0.0.1:51058 - "WebSocket /ws/alerts/64f1a2b3c4d5e6f7a8b9c0d1" [accepted]
+2026-04-19 00:24:42,408 | INFO     | riskhub.ws | WS connected: user=64f1a2b3c4d5e6f7a8b9c0d1 (total connections for user: 2)
+INFO:     connection closed
+2026-04-19 00:24:42,701 | INFO     | riskhub.ws | WS disconnected: user=64f1a2b3c4d5e6f7a8b9c0d1
+2026-04-19 00:24:42,701 | INFO     | riskhub.api.ws | WS client disconnected normally: user=64f1a2b3c4d5e6f7a8b9c0d1
+2026-04-19 00:24:43,009 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:43,595 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:43,605 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:43,609 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:43,614 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:44,759 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:44,762 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:48,534 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:48,536 | INFO     | riskhub.ws | WS disconnected: user=64f1a2b3c4d5e6f7a8b9c0d1
+2026-04-19 00:24:48,536 | INFO     | riskhub.api.ws | WS client disconnected normally: user=64f1a2b3c4d5e6f7a8b9c0d1
+INFO:     connection closed
+2026-04-19 00:24:49,526 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:49,787 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:50,646 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:50,958 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:52,892 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:53,598 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:53,611 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:53,621 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:53,631 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:54,591 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:24:54,605 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:54,619 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:55,978 | WARNING  | riskhub.engine.correlation | No OHLCV data provided for correlation engine.
+2026-04-19 00:24:56,276 | WARNING  | riskhub.engine.correlation | No OHLCV data provided for correlation engine.
+2026-04-19 00:24:58,480 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:58,492 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:59,715 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:59,951 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:59,962 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:24:59,975 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:25:06,337 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:25:07,030 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:25:07,600 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:25:07,606 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:25:07,611 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:25:07,617 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:25:08,835 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:25:09,336 | INFO     | riskhub.exchange | okx client created in SANDBOX/TESTNET mode
+2026-04-19 00:25:10,887 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:25:11,499 | INFO     | riskhub.exchange | binance client created in DEMO mode (profile=demo)
+2026-04-19 00:25:11,982 | WARNING  | riskhub.engine.correlation | No OHLCV data provided for correlation engine.
+2026-04-19 00:25:12,722 | WARNING  | riskhub.engine.correlation | No OHLCV data provided for correlation engine.

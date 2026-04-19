@@ -1,7 +1,6 @@
 import { Bell, Link2, RefreshCw, ShieldCheck } from "lucide-react";
 
 interface NavbarProps {
-  totalPortfolioValue: number;
   lastRefreshAt: string | null;
   hasConfiguredExchangeConnection: boolean;
   hasLiveExchangeConnection: boolean;
@@ -12,13 +11,6 @@ interface NavbarProps {
   isRefreshing?: boolean;
   onRefresh: () => void;
   onOpenConnections: () => void;
-}
-
-function formatCurrency(value: number): string {
-  return value.toLocaleString(undefined, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  });
 }
 
 function formatRefreshLabel(
@@ -42,7 +34,6 @@ function formatRefreshLabel(
 }
 
 export function Navbar({
-  totalPortfolioValue,
   lastRefreshAt,
   hasConfiguredExchangeConnection,
   hasLiveExchangeConnection,
@@ -94,17 +85,6 @@ export function Navbar({
       </div>
 
       <div className="flex flex-wrap items-center justify-end gap-3 md:gap-5">
-        <div className="flex flex-col items-end">
-          <span className="mb-1 text-[10px] font-bold uppercase tracking-widest text-gray-400">
-            Total Portfolio Value
-          </span>
-          <span className="font-mono text-2xl font-bold tracking-tight text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">
-            ${formatCurrency(totalPortfolioValue)}
-          </span>
-        </div>
-
-        <div className="hidden h-10 w-px bg-white/10 md:block" />
-
         <div className="hidden min-w-[150px] rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 md:flex md:flex-col">
           <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
             Active Connections

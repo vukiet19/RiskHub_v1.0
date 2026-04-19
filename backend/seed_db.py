@@ -100,7 +100,7 @@ async def seed():
             "user_id": dummy_id,
             "rule_id": "RR-002",
             "rule_name": "Drawdown Alert",
-            "severity": "danger",
+            "severity": "critical",
             "title": "Critical Drawdown",
             "message": "Portfolio drawdown reached 5%. Consider closing underperforming positions.",
             "triggered_at": datetime.now(timezone.utc) - timedelta(hours=1),

@@ -210,6 +210,24 @@ def calculate_contagion_graph(
         logger.warning("No OHLCV data provided for correlation engine.")
         return _empty_response(window_days)
 
+    # Keep only meaningful positive holdings and normalise symbol casing.
+    normalised_positions: Dict[str, float] = {}
+    for symbol, value in positions.items():
+        try:
+            amount = float(value)
+        except (TypeError, ValueError):
+            continue
+        if amount <= 0:
+            continue
+        clean_symbol = str(symbol or "").strip().upper()
+        if not clean_symbol:
+            continue
+        normalised_positions[clean_symbol] = normalised_positions.get(clean_symbol, 0.0) + amount
+
+    if not normalised_positions:
+        return _empty_response(window_days)
+    positions = normalised_positions
+
     # ── 1. Build price DataFrames ────────────────────────────────────
     price_series: Dict[str, pd.Series] = {}
     for symbol, candles in ohlcv_data.items():
@@ -237,6 +255,7 @@ def calculate_contagion_graph(
     close_df = close_df[symbols] if all(s in close_df.columns for s in symbols) else close_df
 
     symbols = list(close_df.columns)
+    missing_symbols = [s for s in positions if s not in symbols]
 
     # ── 2. Current and 7-day-ago correlation matrices ────────────────
     current_window = _slice_window(close_df, window_days, offset_days=0)
@@ -490,19 +509,49 @@ def calculate_contagion_graph(
             cluster_roles[c["systemic_asset"]] = "hub"
 
     # ── 13. Build nodes ─────────────────────────────────────────────
+    all_symbols = symbols + [s for s in missing_symbols if s not in symbols]
+    all_total_value = sum(positions.get(s, 0.0) for s in all_symbols)
+    if all_total_value == 0:
+        all_total_value = 1.0
+    all_weight_pcts: Dict[str, float] = {
+        s: round((positions.get(s, 0.0) / all_total_value) * 100, 2)
+        for s in all_symbols
+    }
+
+    # Keep holdings with unresolved market data visible as isolated nodes.
+    for s in missing_symbols:
+        if s in cluster_ids:
+            continue
+        cid = f"cluster_{s.lower()}"
+        cluster_ids[s] = cid
+        cluster_roles[s] = "peripheral"
+        flags_map[s] = ["market_data_missing"]
+        top_corrs[s] = []
+        daily_moves[s] = 0.0
+        systemic_scores[s] = round(all_weight_pcts.get(s, 0.0) * 0.4, 1)
+        clusters.append({
+            "id": cid,
+            "label": f"Isolated {s}",
+            "members": [s],
+            "member_count": 1,
+            "total_weight_pct": all_weight_pcts.get(s, 0.0),
+            "systemic_asset": s,
+            "risk_level": "moderate",
+        })
+
     nodes = []
-    for s in symbols:
+    for s in all_symbols:
         nodes.append({
             "id": s,
             "label": s,
             "value_usd": round(positions.get(s, 0), 2),
-            "weight_pct": weight_pcts[s],
-            "daily_move_pct": daily_moves[s],
-            "systemic_score": systemic_scores[s],
-            "cluster_id": cluster_ids[s],
-            "cluster_role": cluster_roles[s],
-            "flags": flags_map[s],
-            "top_correlations": top_corrs[s],
+            "weight_pct": all_weight_pcts.get(s, 0.0),
+            "daily_move_pct": daily_moves.get(s, 0.0),
+            "systemic_score": systemic_scores.get(s, 0.0),
+            "cluster_id": cluster_ids.get(s, f"cluster_{s.lower()}"),
+            "cluster_role": cluster_roles.get(s, "peripheral"),
+            "flags": flags_map.get(s, []),
+            "top_correlations": top_corrs.get(s, []),
         })
 
     # Overview guidance: Sparse topology-preserving subset (MST-like)

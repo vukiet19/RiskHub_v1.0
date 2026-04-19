@@ -17,6 +17,7 @@ Security:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
@@ -25,6 +26,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
+import aiohttp
 import ccxt.async_support as ccxt
 from bson import ObjectId, Decimal128
 from pymongo import UpdateOne
@@ -60,6 +62,9 @@ SUPPORTED_EXCHANGES: dict[str, type] = {
     "binance": ccxt.binance,
     "okx": ccxt.okx,
 }
+
+BINANCE_PROFILE_DEMO = "demo"
+BINANCE_PROFILE_LEGACY_TESTNET = "legacy_testnet"
 
 
 def _default_futures_type(exchange_id: str) -> str:
@@ -101,6 +106,48 @@ def _configure_binance_demo_urls(exchange: ccxt.Exchange) -> None:
     exchange.urls["api"] = api_urls
 
 
+def _configure_binance_legacy_testnet_urls(exchange: ccxt.Exchange) -> None:
+    api_urls = exchange.urls.get("api")
+    if not isinstance(api_urls, dict):
+        api_urls = {}
+    else:
+        api_urls = dict(api_urls)
+
+    api_urls.update(
+        {
+            "public": "https://testnet.binance.vision/api/v3",
+            "private": "https://testnet.binance.vision/api/v3",
+            "v1": "https://testnet.binance.vision/api/v1",
+            "v3": "https://testnet.binance.vision/api/v3",
+            "fapiPublic": "https://testnet.binancefuture.com/fapi/v1",
+            "fapiPublicV2": "https://testnet.binancefuture.com/fapi/v2",
+            "fapiPublicV3": "https://testnet.binancefuture.com/fapi/v3",
+            "fapiPrivate": "https://testnet.binancefuture.com/fapi/v1",
+            "fapiPrivateV2": "https://testnet.binancefuture.com/fapi/v2",
+            "fapiPrivateV3": "https://testnet.binancefuture.com/fapi/v3",
+        }
+    )
+    exchange.urls["api"] = api_urls
+
+
+def _binance_profiles_for_environment(environment: str) -> tuple[Optional[str], ...]:
+    if environment == "demo":
+        return (BINANCE_PROFILE_DEMO, BINANCE_PROFILE_LEGACY_TESTNET)
+    if environment == "testnet":
+        return (BINANCE_PROFILE_LEGACY_TESTNET, BINANCE_PROFILE_DEMO)
+    return (None,)
+
+
+def _apply_binance_sandbox_profile(exchange: ccxt.Exchange, profile: str) -> None:
+    if profile == BINANCE_PROFILE_DEMO:
+        _configure_binance_demo_urls(exchange)
+        return
+    if profile == BINANCE_PROFILE_LEGACY_TESTNET:
+        _configure_binance_legacy_testnet_urls(exchange)
+        return
+    raise ValueError(f"Unsupported Binance sandbox profile '{profile}'.")
+
+
 def _configure_binance_derivatives_compat(
     exchange: ccxt.Exchange,
     environment: str,
@@ -132,6 +179,10 @@ def _configure_binance_derivatives_compat(
     options["fetchPositions"] = fetch_positions_opts
 
     options["defaultSubType"] = "linear"
+    # Avoid private SAPI fetchCurrencies during load_markets on sandbox.
+    # Demo/testnet keys can fail with false -2008 when SAPI currency config
+    # is queried even though account endpoints are valid.
+    options["fetchCurrencies"] = False
     exchange.options = options
 
 
@@ -143,6 +194,12 @@ def _binance_futures_query_params(environment: str) -> dict[str, Any]:
 
 
 def _format_exchange_auth_error(exchange_id: str, exc: Exception) -> str:
+    if exchange_id == "binance" and _is_binance_invalid_api_key_id_error(exc):
+        return (
+            "binance Invalid Api-Key ID. Ensure the key/secret are from Binance Demo/Testnet "
+            "API Management and that Spot + Futures read permissions are enabled."
+        )
+
     raw_message = str(exc or "").strip()
     if raw_message.lower().startswith(f"{exchange_id.lower()} "):
         return raw_message
@@ -151,6 +208,56 @@ def _format_exchange_auth_error(exchange_id: str, exc: Exception) -> str:
 
 def _is_exchange_auth_error(exc: Exception) -> bool:
     return isinstance(exc, (ccxt.AuthenticationError, ccxt.PermissionDenied, ccxt.BadRequest))
+
+
+def _is_binance_invalid_api_key_id_error(exc: Exception) -> bool:
+    message = str(exc or "").lower()
+    return "invalid api-key id" in message or ("-2008" in message and "api-key" in message)
+
+
+def _binance_profile_candidates(exchange_id: str, environment: str) -> tuple[Optional[str], ...]:
+    if exchange_id != "binance" or environment not in {"demo", "testnet"}:
+        return (None,)
+    return _binance_profiles_for_environment(environment)
+
+
+def _should_retry_binance_profile(
+    *,
+    exchange_id: str,
+    environment: str,
+    profile_index: int,
+    profile_count: int,
+    exc: Exception,
+) -> bool:
+    if exchange_id != "binance" or environment not in {"demo", "testnet"}:
+        return False
+    if profile_index >= profile_count - 1:
+        return False
+    if not _is_exchange_auth_error(exc):
+        return False
+    return _is_binance_invalid_api_key_id_error(exc)
+
+
+def _attach_ccxt_threaded_dns_session(exchange: ccxt.Exchange) -> None:
+    """
+    Use OS-threaded DNS resolution for CCXT HTTP calls.
+
+    This avoids resolver timeouts observed with aiohttp async DNS in
+    some Windows environments when calling exchange public endpoints.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+
+    connector = aiohttp.TCPConnector(
+        resolver=aiohttp.ThreadedResolver(),
+        enable_cleanup_closed=True,
+    )
+    session = aiohttp.ClientSession(connector=connector, trust_env=False)
+    exchange.session = session
+    exchange.own_session = True
+    exchange.tcp_connector = connector
 
 
 # ─── Exchange client factory ────────────────────────────────────────────
@@ -162,6 +269,7 @@ def _create_exchange_client(
     passphrase: Optional[str] = None,
     testnet: Optional[bool] = None,
     environment: Optional[str] = None,
+    binance_sandbox_profile: Optional[str] = None,
 ) -> ccxt.Exchange:
     """
     Instantiate a CCXT async exchange client in **read-only** mode.
@@ -199,7 +307,20 @@ def _create_exchange_client(
         config["password"] = passphrase
 
     exchange = cls(config)
-    if normalized_environment == "testnet":
+    _attach_ccxt_threaded_dns_session(exchange)
+    if exchange_id == "binance" and normalized_environment in {"demo", "testnet"}:
+        selected_profile = (
+            binance_sandbox_profile
+            or _binance_profiles_for_environment(normalized_environment)[0]
+        )
+        _apply_binance_sandbox_profile(exchange, selected_profile)
+        logger.info(
+            "%s client created in %s mode (profile=%s)",
+            exchange_id,
+            normalized_environment.upper(),
+            selected_profile,
+        )
+    elif normalized_environment == "testnet":
         exchange.set_sandbox_mode(True)
         logger.info("%s client created in SANDBOX/TESTNET mode", exchange_id)
     elif normalized_environment == "demo":
@@ -488,6 +609,97 @@ def _extract_futures_totals(balance: dict[str, Any]) -> dict[str, float]:
         "account_value_usd": round(margin_balance, 8),
         "available_balance_usd": round(available_balance, 8),
     }
+
+
+def _extract_binance_futures_overview_from_account_payload(
+    account_payload: dict[str, Any],
+    position_rows: list[dict[str, Any]],
+) -> dict[str, float | int]:
+    assets = account_payload.get("assets")
+    assets_list = assets if isinstance(assets, list) else []
+
+    wallet_balance = _safe_float(account_payload.get("totalWalletBalance"))
+    unrealized_pnl = _safe_float(account_payload.get("totalUnrealizedProfit"))
+    margin_balance = _safe_float(account_payload.get("totalMarginBalance"))
+    available_balance = _safe_float(account_payload.get("availableBalance"))
+
+    if assets_list:
+        wallet_balance = wallet_balance or sum(_safe_float(asset.get("walletBalance")) for asset in assets_list)
+        unrealized_pnl = unrealized_pnl or sum(_safe_float(asset.get("unrealizedProfit")) for asset in assets_list)
+        margin_balance = margin_balance or sum(_safe_float(asset.get("marginBalance")) for asset in assets_list)
+        available_balance = available_balance or sum(_safe_float(asset.get("availableBalance")) for asset in assets_list)
+
+    active_positions = [
+        row
+        for row in position_rows
+        if _safe_float(row.get("positionAmt")) != 0.0
+    ]
+
+    if unrealized_pnl == 0.0:
+        unrealized_pnl = sum(
+            _safe_float(row.get("unRealizedProfit") or row.get("unrealizedProfit"))
+            for row in active_positions
+        )
+    if margin_balance == 0.0:
+        margin_balance = wallet_balance + unrealized_pnl
+
+    balances_count = 0
+    if assets_list:
+        balances_count = sum(
+            1
+            for asset in assets_list
+            if _safe_float(asset.get("walletBalance")) != 0.0
+        )
+
+    return {
+        "wallet_balance_usd": round(wallet_balance, 8),
+        "account_value_usd": round(margin_balance, 8),
+        "total_unrealized_pnl_usd": round(unrealized_pnl, 8),
+        "available_balance_usd": round(available_balance, 8),
+        "balances_count": balances_count,
+        "positions_count": len(active_positions),
+    }
+
+
+def _extract_binance_open_positions_from_rows(
+    position_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    positions: list[dict[str, Any]] = []
+
+    for row in position_rows:
+        signed_qty = _safe_decimal(row.get("positionAmt"))
+        if signed_qty == 0:
+            continue
+
+        contracts = abs(signed_qty)
+        side = "long" if signed_qty > 0 else "short"
+        symbol_raw = str(row.get("symbol") or "")
+        base, quote = _parse_symbol_parts(symbol_raw)
+        mark_price = _safe_decimal(row.get("markPrice"))
+        notional = abs(_safe_decimal(row.get("notional")))
+        if notional == 0 and mark_price > 0:
+            notional = contracts * mark_price
+
+        positions.append(
+            {
+                "symbol": f"{base}{quote}" if base or quote else symbol_raw,
+                "side": side,
+                "contracts": str(contracts),
+                "contractSize": "1",
+                "entry_price": str(_safe_decimal(row.get("entryPrice"))),
+                "mark_price": str(mark_price),
+                "unrealized_pnl": str(
+                    _safe_decimal(row.get("unRealizedProfit") or row.get("unrealizedProfit"))
+                ),
+                "liquidation_price": str(_safe_decimal(row.get("liquidationPrice"))),
+                "leverage": max(_safe_int(row.get("leverage"), 1), 1),
+                "margin_type": str(row.get("marginType") or "cross"),
+                "exchange_id": "binance",
+                "notional": str(notional),
+            }
+        )
+
+    return positions
 
 
 # ─── CCXT → Pydantic mapping ────────────────────────────────────────────
@@ -1685,59 +1897,102 @@ async def fetch_open_positions(
     ephemeral; only closed trades are stored).
     """
     normalized_environment = _normalise_environment(environment, testnet=testnet)
-    exchange = _create_exchange_client(
-        exchange_id,
-        api_key,
-        api_secret,
-        passphrase,
-        environment=normalized_environment,
-    )
-    positions: list[dict[str, Any]] = []
+    profiles = _binance_profile_candidates(exchange_id, normalized_environment)
+    last_error: Optional[Exception] = None
 
-    try:
-        await exchange.load_markets()
-        if exchange_id == "binance":
-            futures_params = _binance_futures_query_params(normalized_environment)
-            raw_positions = await exchange.fetch_positions(None, futures_params)
-        else:
-            raw_positions = await exchange.fetch_positions()
+    for profile_index, profile in enumerate(profiles):
+        exchange = _create_exchange_client(
+            exchange_id,
+            api_key,
+            api_secret,
+            passphrase,
+            environment=normalized_environment,
+            binance_sandbox_profile=profile,
+        )
+        positions: list[dict[str, Any]] = []
 
-        for pos in raw_positions:
-            contracts = _safe_decimal(pos.get("contracts"))
-            if contracts == 0:
-                continue  # skip empty positions
+        try:
+            if exchange_id == "binance":
+                raw_rows = await exchange.fapiPrivateV2GetPositionRisk({})
+                if isinstance(raw_rows, list):
+                    return _extract_binance_open_positions_from_rows(raw_rows)
+                return []
+            else:
+                await exchange.load_markets()
+                raw_positions = await exchange.fetch_positions()
 
-            entry = _safe_decimal(pos.get("entryPrice"))
-            mark = _safe_decimal(pos.get("markPrice"))
-            unrealized = _safe_decimal(pos.get("unrealizedPnl"))
-            liq_price = _safe_decimal(pos.get("liquidationPrice"))
-            leverage_val = int(pos.get("leverage", 1) or 1)
-            contract_size = _safe_decimal(pos.get("contractSize"), "1")
-            notional_usd = _position_notional_usd(pos)
+            for pos in raw_positions:
+                contracts = _safe_decimal(pos.get("contracts"))
+                if contracts == 0:
+                    continue  # skip empty positions
 
-            base, quote = _parse_symbol_parts(pos.get("symbol", ""))
+                entry = _safe_decimal(pos.get("entryPrice"))
+                mark = _safe_decimal(pos.get("markPrice"))
+                unrealized = _safe_decimal(pos.get("unrealizedPnl"))
+                liq_price = _safe_decimal(pos.get("liquidationPrice"))
+                leverage_val = int(pos.get("leverage", 1) or 1)
+                contract_size = _safe_decimal(pos.get("contractSize"), "1")
+                notional_usd = _position_notional_usd(pos)
 
-            positions.append({
-                "symbol": f"{base}{quote}",
-                "side": pos.get("side", "long"),
-                "contracts": str(contracts),
-                "contractSize": str(contract_size),
-                "entry_price": str(entry),
-                "mark_price": str(mark),
-                "unrealized_pnl": str(unrealized),
-                "liquidation_price": str(liq_price),
-                "leverage": leverage_val,
-                "margin_type": pos.get("marginMode", "cross"),
-                "exchange_id": exchange_id,
-                "notional": str(notional_usd),
-            })
+                base, quote = _parse_symbol_parts(pos.get("symbol", ""))
 
-    except ccxt.AuthenticationError as e:
-        raise ValueError(f"Auth failed for {exchange_id}") from e
-    finally:
-        await exchange.close()
+                positions.append(
+                    {
+                        "symbol": f"{base}{quote}",
+                        "side": pos.get("side", "long"),
+                        "contracts": str(contracts),
+                        "contractSize": str(contract_size),
+                        "entry_price": str(entry),
+                        "mark_price": str(mark),
+                        "unrealized_pnl": str(unrealized),
+                        "liquidation_price": str(liq_price),
+                        "leverage": leverage_val,
+                        "margin_type": pos.get("marginMode", "cross"),
+                        "exchange_id": exchange_id,
+                        "notional": str(notional_usd),
+                    }
+                )
 
-    return positions
+            return positions
+        except ccxt.AuthenticationError as e:
+            last_error = e
+            if _should_retry_binance_profile(
+                exchange_id=exchange_id,
+                environment=normalized_environment,
+                profile_index=profile_index,
+                profile_count=len(profiles),
+                exc=e,
+            ):
+                logger.warning(
+                    "binance %s positions auth failed on profile=%s, retrying fallback profile",
+                    normalized_environment,
+                    profile,
+                )
+                continue
+            raise ValueError(f"Auth failed for {exchange_id}") from e
+        except Exception as e:
+            last_error = e
+            if _should_retry_binance_profile(
+                exchange_id=exchange_id,
+                environment=normalized_environment,
+                profile_index=profile_index,
+                profile_count=len(profiles),
+                exc=e,
+            ):
+                logger.warning(
+                    "binance %s positions request failed on profile=%s, retrying fallback profile: %s",
+                    normalized_environment,
+                    profile,
+                    e,
+                )
+                continue
+            raise
+        finally:
+            await exchange.close()
+
+    if last_error is not None:
+        raise last_error
+    return []
 
 
 # ─── Fetch spot balances ─────────────────────────────────────────────────
@@ -1754,50 +2009,84 @@ async def fetch_spot_balances(
     Fetch Spot account balances and best-effort USD valuations.
     """
     normalized_environment = _normalise_environment(environment, testnet=testnet)
-    exchange = _create_exchange_client(
-        exchange_id,
-        api_key,
-        api_secret,
-        passphrase,
-        environment=normalized_environment,
-    )
-    warnings: list[str] = []
+    profiles = _binance_profile_candidates(exchange_id, normalized_environment)
+    last_error: Optional[Exception] = None
 
-    try:
-        exchange.options["defaultType"] = "spot"
-        await exchange.load_markets()
-        raw_assets: list[dict[str, Any]] = []
-        if exchange_id == "binance":
-            # Binance demo/test credentials can fail on SAPI-based balance routes.
-            # Use the signed /api account endpoint directly for stable spot retrieval.
-            account_payload = await exchange.privateGetAccount({})
-            raw_assets = _extract_binance_account_assets(account_payload)
-        if not raw_assets:
-            balance = await exchange.fetch_balance()
-            raw_assets = _extract_nonzero_assets(balance)
-
-        if exchange_id == "binance" and normalized_environment == "testnet":
-            warnings.append(
-                "Binance Spot Testnet balances are isolated from Binance mainnet accounts."
-            )
-        if exchange_id == "binance" and normalized_environment == "demo":
-            warnings.append(
-                "Binance Demo spot balances are simulated and isolated from Binance mainnet accounts."
-            )
-        priced_assets, total_usd, pricing_warnings = await _value_spot_assets(
+    for profile_index, profile in enumerate(profiles):
+        exchange = _create_exchange_client(
             exchange_id,
-            raw_assets,
+            api_key,
+            api_secret,
+            passphrase,
+            environment=normalized_environment,
+            binance_sandbox_profile=profile,
         )
-        warnings.extend(pricing_warnings)
+        warnings: list[str] = []
 
-        return {
-            "exchange_id": exchange_id,
-            "total_usd": str(total_usd),
-            "assets": priced_assets,
-            "warnings": warnings,
-        }
-    finally:
-        await exchange.close()
+        try:
+            exchange.options["defaultType"] = "spot"
+            raw_assets: list[dict[str, Any]] = []
+            if exchange_id == "binance":
+                # Binance demo/test environments do not expose SAPI balance routes.
+                # Prefer signed /api/v3/account and avoid falling back to SAPI for
+                # demo/testnet because that produces false "spot unavailable" errors.
+                try:
+                    account_payload = await exchange.privateGetAccount({})
+                    raw_assets = _extract_binance_account_assets(account_payload)
+                except Exception:
+                    if normalized_environment == "mainnet":
+                        # Mainnet can still fallback to generic CCXT balance routes.
+                        balance = await exchange.fetch_balance({"type": "spot"})
+                        raw_assets = _extract_nonzero_assets(balance)
+                    else:
+                        raise
+            else:
+                await exchange.load_markets()
+                balance = await exchange.fetch_balance()
+                raw_assets = _extract_nonzero_assets(balance)
+
+            if exchange_id == "binance" and normalized_environment == "testnet":
+                warnings.append(
+                    "Binance Spot Testnet balances are isolated from Binance mainnet accounts."
+                )
+            if exchange_id == "binance" and normalized_environment == "demo":
+                warnings.append(
+                    "Binance Demo spot balances are simulated and isolated from Binance mainnet accounts."
+                )
+            priced_assets, total_usd, pricing_warnings = await _value_spot_assets(
+                exchange_id,
+                raw_assets,
+            )
+            warnings.extend(pricing_warnings)
+
+            return {
+                "exchange_id": exchange_id,
+                "total_usd": str(total_usd),
+                "assets": priced_assets,
+                "warnings": warnings,
+            }
+        except Exception as e:
+            last_error = e
+            if _should_retry_binance_profile(
+                exchange_id=exchange_id,
+                environment=normalized_environment,
+                profile_index=profile_index,
+                profile_count=len(profiles),
+                exc=e,
+            ):
+                logger.warning(
+                    "binance %s spot auth failed on profile=%s, retrying fallback profile",
+                    normalized_environment,
+                    profile,
+                )
+                continue
+            raise
+        finally:
+            await exchange.close()
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Failed to fetch spot balances.")
 
 
 # ─── Fetch OHLCV data for Correlation ────────────────────────────────────
@@ -1818,22 +2107,17 @@ async def validate_binance_testnet_credentials(
     )
 
     try:
-        await exchange.load_markets()
-        exchange.options["defaultType"] = _default_futures_type("binance")
-        futures_params = _binance_futures_query_params("testnet")
-
-        balance = await exchange.fetch_balance(futures_params)
-        positions = await exchange.fetch_positions(None, futures_params)
-        active_positions = [
-            position
-            for position in positions
-            if _safe_float(position.get("contracts")) != 0
-        ]
+        account_payload = await exchange.fapiPrivateV3GetAccount({})
+        position_rows = await exchange.fapiPrivateV2GetPositionRisk({})
+        overview = _extract_binance_futures_overview_from_account_payload(
+            account_payload if isinstance(account_payload, dict) else {},
+            position_rows if isinstance(position_rows, list) else [],
+        )
 
         return {
             "permissions_verified": ["read"],
-            "balances_count": len(_extract_nonzero_assets(balance)),
-            "positions_count": len(active_positions),
+            "balances_count": int(overview["balances_count"]),
+            "positions_count": int(overview["positions_count"]),
             "warnings": [],
         }
     except (
@@ -1857,53 +2141,90 @@ async def fetch_futures_account_overview(
     environment: Optional[str] = None,
 ) -> dict[str, Any]:
     normalized_environment = _normalise_environment(environment, testnet=testnet)
-    exchange = _create_exchange_client(
-        exchange_id,
-        api_key,
-        api_secret,
-        passphrase,
-        environment=normalized_environment,
-    )
+    profiles = _binance_profile_candidates(exchange_id, normalized_environment)
+    last_error: Optional[Exception] = None
 
-    try:
-        exchange.options["defaultType"] = _default_futures_type(exchange_id)
-        await exchange.load_markets()
-        if exchange_id == "binance":
-            futures_params = _binance_futures_query_params(normalized_environment)
-            balance = await exchange.fetch_balance(futures_params)
-            positions = await exchange.fetch_positions(None, futures_params)
-        else:
-            balance = await exchange.fetch_balance()
-            positions = await exchange.fetch_positions()
+    for profile_index, profile in enumerate(profiles):
+        exchange = _create_exchange_client(
+            exchange_id,
+            api_key,
+            api_secret,
+            passphrase,
+            environment=normalized_environment,
+            binance_sandbox_profile=profile,
+        )
 
-        active_positions = [
-            position
-            for position in positions
-            if _safe_float(position.get("contracts")) != 0
-        ]
-        totals = _extract_futures_totals(balance)
+        try:
+            exchange.options["defaultType"] = _default_futures_type(exchange_id)
+            if exchange_id == "binance":
+                account_payload = await exchange.fapiPrivateV3GetAccount({})
+                position_rows = await exchange.fapiPrivateV2GetPositionRisk({})
+                overview = _extract_binance_futures_overview_from_account_payload(
+                    account_payload if isinstance(account_payload, dict) else {},
+                    position_rows if isinstance(position_rows, list) else [],
+                )
+                return {
+                    "exchange_id": exchange_id,
+                    "wallet_balance_usd": float(overview["wallet_balance_usd"]),
+                    "account_value_usd": float(overview["account_value_usd"]),
+                    "total_unrealized_pnl_usd": float(overview["total_unrealized_pnl_usd"]),
+                    "available_balance_usd": float(overview["available_balance_usd"]),
+                    "balances_count": int(overview["balances_count"]),
+                    "positions_count": int(overview["positions_count"]),
+                }
+            else:
+                await exchange.load_markets()
+                balance = await exchange.fetch_balance()
+                positions = await exchange.fetch_positions()
 
-        if totals["unrealized_pnl_usd"] == 0.0:
-            totals["unrealized_pnl_usd"] = round(
-                sum(_safe_float(position.get("unrealizedPnl")) for position in active_positions),
-                8,
-            )
-            totals["account_value_usd"] = round(
-                totals["wallet_balance_usd"] + totals["unrealized_pnl_usd"],
-                8,
-            )
+            active_positions = [
+                position
+                for position in positions
+                if _safe_float(position.get("contracts")) != 0
+            ]
+            totals = _extract_futures_totals(balance)
 
-        return {
-            "exchange_id": exchange_id,
-            "wallet_balance_usd": totals["wallet_balance_usd"],
-            "account_value_usd": totals["account_value_usd"],
-            "total_unrealized_pnl_usd": totals["unrealized_pnl_usd"],
-            "available_balance_usd": totals["available_balance_usd"],
-            "balances_count": len(_extract_nonzero_assets(balance)),
-            "positions_count": len(active_positions),
-        }
-    finally:
-        await exchange.close()
+            if totals["unrealized_pnl_usd"] == 0.0:
+                totals["unrealized_pnl_usd"] = round(
+                    sum(_safe_float(position.get("unrealizedPnl")) for position in active_positions),
+                    8,
+                )
+                totals["account_value_usd"] = round(
+                    totals["wallet_balance_usd"] + totals["unrealized_pnl_usd"],
+                    8,
+                )
+
+            return {
+                "exchange_id": exchange_id,
+                "wallet_balance_usd": totals["wallet_balance_usd"],
+                "account_value_usd": totals["account_value_usd"],
+                "total_unrealized_pnl_usd": totals["unrealized_pnl_usd"],
+                "available_balance_usd": totals["available_balance_usd"],
+                "balances_count": len(_extract_nonzero_assets(balance)),
+                "positions_count": len(active_positions),
+            }
+        except Exception as e:
+            last_error = e
+            if _should_retry_binance_profile(
+                exchange_id=exchange_id,
+                environment=normalized_environment,
+                profile_index=profile_index,
+                profile_count=len(profiles),
+                exc=e,
+            ):
+                logger.warning(
+                    "binance %s futures auth failed on profile=%s, retrying fallback profile",
+                    normalized_environment,
+                    profile,
+                )
+                continue
+            raise
+        finally:
+            await exchange.close()
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("Failed to fetch futures account overview.")
 
 
 async def fetch_account_overview(
@@ -1928,7 +2249,7 @@ async def fetch_account_overview(
 
     spot_total_usd = 0.0
     spot_assets: list[dict[str, Any]] = []
-    if normalized_market_type in {"spot", "mixed", "futures"}:
+    if normalized_market_type in {"spot", "mixed"}:
         try:
             spot_balance = await fetch_spot_balances(
                 exchange_id=exchange_id,
@@ -2034,66 +2355,89 @@ async def fetch_daily_ohlcv(
     Uses unauthenticated API limits.
     Returns dict mapping symbol to CCXT OHLCV list.
     """
-    exchange = _create_exchange_client(exchange_id, "", "")
     since = int((datetime.now(tz=timezone.utc).timestamp() - days * 86400) * 1000)
-    
-    results = {}
-    binance_fallback = None
-    
+
+    results: dict[str, list[list[float]]] = {}
+    clients: dict[str, ccxt.Exchange] = {}
+    fallback_exchange_ids = [
+        ex_id
+        for ex_id in SUPPORTED_EXCHANGES
+        if ex_id != exchange_id
+    ]
+    probe_exchange_ids = [exchange_id, *fallback_exchange_ids]
+
+    async def _ensure_public_client(target_exchange_id: str) -> ccxt.Exchange:
+        existing = clients.get(target_exchange_id)
+        if existing is not None:
+            return existing
+        client = _create_exchange_client(target_exchange_id, "", "")
+        client.options["defaultType"] = "spot"
+        await client.load_markets()
+        clients[target_exchange_id] = client
+        return client
+
     try:
-        # Default to spot, but we'll manually probe both
-        exchange.options["defaultType"] = "spot"
-        await exchange.load_markets()
-        
         for sym in symbols:
-            ccxt_sym = sym if "/" in sym else f"{sym}/USDT" 
+            ccxt_sym = sym if "/" in sym else f"{sym}/USDT"
             spot_sym = ccxt_sym
             swap_sym = f"{ccxt_sym}:USDT"
-            
-            # 1. Try Spot Market
-            try:
-                ohlcv = await exchange.fetch_ohlcv(spot_sym, '1d', since)
-                if ohlcv and len(ohlcv) > 0:
-                    results[sym] = ohlcv
-                    continue
-            except Exception as e:
-                logger.debug("Failed Spot OHLCV for %s natively on %s: %s", spot_sym, exchange_id, type(e).__name__)
-                
-            # 2. Try Swap Market (especially for OKX)
-            try:
-                ohlcv = await exchange.fetch_ohlcv(swap_sym, '1d', since)
-                if ohlcv and len(ohlcv) > 0:
-                    results[sym] = ohlcv
-                    continue
-            except Exception as e:
-                logger.debug("Failed Swap OHLCV for %s natively on %s: %s", swap_sym, exchange_id, type(e).__name__)
-                
-            # 3. Universal Fallback to Binance
-            if exchange_id != "binance":
+            resolved = False
+
+            for probe_exchange_id in probe_exchange_ids:
                 try:
-                    if binance_fallback is None:
-                        binance_fallback = _create_exchange_client("binance", "", "")
-                        binance_fallback.options["defaultType"] = "spot"
-                        await binance_fallback.load_markets()
-                    
-                    ohlcv = await binance_fallback.fetch_ohlcv(spot_sym, '1d', since)
-                    if ohlcv and len(ohlcv) > 0:
-                        results[sym] = ohlcv
-                        if out_warnings is not None:
-                            out_warnings.append(f"Used Binance fallback for missing {exchange_id} market data on {sym}.")
-                        if out_meta is not None:
-                            out_meta["used_fallback"] = True
-                        continue
+                    client = await _ensure_public_client(probe_exchange_id)
                 except Exception as e:
-                    logger.debug("Failed Binance fallback for %s: %s", sym, type(e).__name__)
-                    
-            logger.warning("All OHLCV attempts failed for %s on %s", sym, exchange_id)
+                    logger.debug(
+                        "Failed to initialise %s market client while resolving %s: %s",
+                        probe_exchange_id,
+                        sym,
+                        type(e).__name__,
+                    )
+                    continue
+
+                for market_symbol, market_kind in ((spot_sym, "spot"), (swap_sym, "swap")):
+                    try:
+                        ohlcv = await client.fetch_ohlcv(market_symbol, "1d", since)
+                        if not ohlcv:
+                            continue
+
+                        results[sym] = ohlcv
+                        resolved = True
+                        if probe_exchange_id != exchange_id:
+                            if out_meta is not None:
+                                out_meta["used_fallback"] = True
+                                seen = set(out_meta.get("fallback_exchanges", []))
+                                seen.add(probe_exchange_id)
+                                out_meta["fallback_exchanges"] = sorted(seen)
+                        break
+                    except Exception as e:
+                        logger.debug(
+                            "Failed %s OHLCV for %s on %s: %s",
+                            market_kind,
+                            market_symbol,
+                            probe_exchange_id,
+                            type(e).__name__,
+                        )
+
+                if resolved:
+                    break
+
+            if resolved:
+                continue
+
+            logger.warning(
+                "All OHLCV attempts failed for %s on %s (fallbacks=%s)",
+                sym,
+                exchange_id,
+                ",".join(fallback_exchange_ids) if fallback_exchange_ids else "none",
+            )
             if out_warnings is not None:
                 out_warnings.append(f"Could not resolve market data for {sym} on {exchange_id} or fallback.")
-
     finally:
-        await exchange.close()
-        if binance_fallback is not None:
-            await binance_fallback.close()
+        for client in clients.values():
+            try:
+                await client.close()
+            except Exception as close_error:
+                logger.debug("Failed to close exchange client %s: %s", client.id, close_error)
 
     return results

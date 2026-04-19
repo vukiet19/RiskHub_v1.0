@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { NetworkOverview } from "./contagion/NetworkOverview";
 import { FocusView } from "./contagion/FocusView";
 import { AssetInspector } from "./AssetInspector";
 import { buildApiUrl } from "../lib/riskhub-api";
@@ -17,18 +16,14 @@ import type {
   ContagionMode,
 } from "./contagion/types";
 
-// ── Props ────────────────────────────────────────────────────────────────
 
 interface PortfolioContagionMapProps {
   userId: string;
   refreshToken?: number;
 }
 
-// ── Types ────────────────────────────────────────────────────────────────
 
-type GraphView = "focus" | "overview";
 
-// ── Helpers ──────────────────────────────────────────────────────────────
 
 function timeAgo(isoString: string): string {
   try {
@@ -90,13 +85,12 @@ function getModeSubtitle(mode: ContagionMode, modeLabel: string): string {
 }
 
 function getHeaderSubtitle(scopeLabel: string, mode: ContagionMode, modeLabel: string): string {
-  return `${scopeLabel} · ${getModeSubtitle(mode, modeLabel)}`;
+  return `${scopeLabel} | ${getModeSubtitle(mode, modeLabel)}`;
 }
 
 /**
  * Normalize the payload to fill in contract-required fields that
- * the current backend may not yet provide. This is the ONLY place
- * where frontier defaults are injected — documented as an adapter.
+ * the current backend may not yet provide.
  */
 function normalizePayload(raw: ContagionData): ContagionData {
   const display = raw.display ?? {
@@ -129,7 +123,6 @@ function normalizePayload(raw: ContagionData): ContagionData {
   return { ...raw, nodes, edges, clusters, display };
 }
 
-// ── Sub-components ───────────────────────────────────────────────────────
 
 function RegimePill({ label, reason }: { label: string; reason: string }) {
   const dotColor =
@@ -164,67 +157,30 @@ function ContagionLegend() {
         <span>Ring = risk</span>
       </div>
       <div className="contagion-legend-item">
-        <svg width={24} height={16}><line x1={0} y1={8} x2={24} y2={8} stroke="#ffb4ab" strokeWidth={3} /></svg>
-        <span>Primary</span>
+        <svg width={30} height={16}>
+          <line x1={0} y1={5} x2={30} y2={5} stroke="#647491" strokeWidth={1.3} />
+          <line x1={0} y1={11} x2={30} y2={11} stroke="#ffb4ab" strokeWidth={4.1} />
+        </svg>
+        <span>Primary width = dependency</span>
       </div>
       <div className="contagion-legend-item">
-        <svg width={24} height={16}><line x1={0} y1={8} x2={24} y2={8} stroke="#647491" strokeWidth={1.5} strokeDasharray="4 3" /></svg>
-        <span>Context</span>
+        <svg width={30} height={16}>
+          <line x1={0} y1={8} x2={30} y2={8} stroke="#ffb4ab" strokeWidth={2.4} strokeOpacity={0.8} />
+          <circle cx={8} cy={8} r={1.7} fill="#ffb4ab" />
+          <path d="M 22 4 L 30 8 L 22 12" fill="none" stroke="#ffb4ab" strokeWidth={1.4} />
+        </svg>
+        <span>Particles = contagion flow</span>
+      </div>
+      <div className="contagion-legend-item">
+        <svg width={30} height={16}>
+          <line x1={0} y1={8} x2={30} y2={8} stroke="#7f91ad" strokeWidth={1.7} strokeDasharray="6 5" />
+        </svg>
+        <span>Dashed = lower-dependency remainder</span>
       </div>
     </div>
   );
 }
 
-// ── View Toggle ──────────────────────────────────────────────────────────
-
-function ViewToggle({
-  view,
-  onChange,
-  disabled = false,
-}: {
-  view: GraphView;
-  onChange: (v: GraphView) => void;
-  disabled?: boolean;
-}) {
-  const disabledTitle = "Graph view not available for this state";
-  return (
-    // wrapper remains pointer-interactive so the title tooltip surfaces on hover
-    <div
-      className="view-toggle"
-      style={disabled ? { opacity: 0.45 } : undefined}
-      title={disabled ? disabledTitle : undefined}
-    >
-      <button
-        type="button"
-        className={`view-toggle-btn ${view === "overview" ? "active" : ""}`}
-        onClick={() => onChange("overview")}
-        disabled={disabled}
-        aria-disabled={disabled}
-        style={disabled ? { pointerEvents: "none", cursor: "not-allowed" } : undefined}
-      >
-        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-          <circle cx={12} cy={12} r={3} /><circle cx={5} cy={5} r={2} /><circle cx={19} cy={5} r={2} /><circle cx={5} cy={19} r={2} /><circle cx={19} cy={19} r={2} />
-        </svg>
-        Overview
-      </button>
-      <button
-        type="button"
-        className={`view-toggle-btn ${view === "focus" ? "active" : ""}`}
-        onClick={() => onChange("focus")}
-        disabled={disabled}
-        aria-disabled={disabled}
-        style={disabled ? { pointerEvents: "none", cursor: "not-allowed" } : undefined}
-      >
-        <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round">
-          <circle cx={12} cy={12} r={4} /><line x1={12} y1={2} x2={12} y2={6} /><line x1={12} y1={18} x2={12} y2={22} /><line x1={2} y1={12} x2={6} y2={12} /><line x1={18} y1={12} x2={22} y2={12} />
-        </svg>
-        Focus
-      </button>
-    </div>
-  );
-}
-
-// ── Scope Toggle ────────────────────────────────────────────────────────
 
 function ScopeToggle({ scope, onChange }: { scope: ContagionScope; onChange: (s: ContagionScope) => void }) {
   return (
@@ -254,7 +210,6 @@ function ScopeToggle({ scope, onChange }: { scope: ContagionScope; onChange: (s:
   );
 }
 
-// ── Mode Toggle ─────────────────────────────────────────────────────────
 
 function ModeToggle({ mode, onChange }: { mode: ContagionMode; onChange: (s: ContagionMode) => void }) {
   return (
@@ -277,7 +232,6 @@ function ModeToggle({ mode, onChange }: { mode: ContagionMode; onChange: (s: Con
   );
 }
 
-// ── Fallbacks ────────────────────────────────────────────────────────────
 
 function ConcentrationFallback({
   title = "Too Few Holdings for Contagion Mapping",
@@ -315,7 +269,7 @@ function PairRiskFallback({ nodes, edge }: { nodes: ContagionNode[]; edge: Conta
         <div style={{ textAlign: "center" }}>
           <div style={{ width: 80, height: 4, borderRadius: 2, background: edge.band === "high" ? "#ffb4ab" : "#ffb59a", margin: "0 auto 8px" }} />
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 18, fontWeight: 700, color: "#dae2fd" }}>{edge.correlation.toFixed(2)}</span>
-          <div style={{ fontSize: 11, color: "#c3c5d7", marginTop: 4 }}>{edge.trend} · 7D: {edge.delta_7d > 0 ? "+" : ""}{edge.delta_7d.toFixed(3)}</div>
+          <div style={{ fontSize: 11, color: "#c3c5d7", marginTop: 4 }}>{edge.trend} | 7D: {edge.delta_7d > 0 ? "+" : ""}{edge.delta_7d.toFixed(3)}</div>
         </div>
         <div style={{ textAlign: "center" }}>
           <div style={{ width: 72, height: 72, borderRadius: "50%", background: "#31394d", display: "flex", alignItems: "center", justifyContent: "center", border: `2px solid ${nodeB.systemic_score > 60 ? "#ffb4ab" : "#b5c4ff"}`, margin: "0 auto 8px" }}>
@@ -363,15 +317,11 @@ function LoadingSkeleton() {
   );
 }
 
-// ── Module Header ────────────────────────────────────────────────────────
 
 function ModuleHeader({
   regime,
   generatedAt,
-  graphView,
-  onViewChange,
   showToggle,
-  viewToggleDisabled,
   scope,
   scopeLabel,
   onScopeChange,
@@ -382,11 +332,7 @@ function ModuleHeader({
 }: {
   regime: { label: "calm" | "elevated" | "stress"; reason: string };
   generatedAt: string;
-  graphView?: GraphView;
-  onViewChange?: (v: GraphView) => void;
   showToggle?: boolean;
-  /** When true, the ViewToggle renders but is visually disabled — used in fallback states. */
-  viewToggleDisabled?: boolean;
   scope?: ContagionScope;
   scopeLabel?: string;
   onScopeChange?: (s: ContagionScope) => void;
@@ -417,12 +363,6 @@ function ModuleHeader({
         ) : null}
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
-        {/* ViewToggle: always render when showToggle=true so the header stays stable.
-            In fallback states, graphView/onViewChange may not be meaningful, so we
-            render it disabled to preserve layout without implying it works. */}
-        {showToggle && graphView !== undefined && onViewChange !== undefined && (
-          <ViewToggle view={graphView} onChange={onViewChange} disabled={viewToggleDisabled} />
-        )}
         {showToggle && scope !== undefined && onScopeChange && (
           <ScopeToggle scope={scope} onChange={onScopeChange} />
         )}
@@ -487,7 +427,7 @@ function SummaryRow({ summary, clusters }: { summary: ContagionSummary; clusters
     : summary.contagion_risk_delta_7d.toFixed(1);
   const deltaColor = summary.contagion_risk_delta_7d > 0 ? "#ffb4ab" : summary.contagion_risk_delta_7d < 0 ? "#a8efb4" : "#c3c5d7";
 
-  let largestClusterLabel = "—";
+  let largestClusterLabel = "-";
   if (summary.largest_cluster) {
     if (typeof summary.largest_cluster === "string") {
       const resolved = clusters.find((c) => c.id === summary.largest_cluster);
@@ -501,14 +441,13 @@ function SummaryRow({ summary, clusters }: { summary: ContagionSummary; clusters
     <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 10 }}>
       <SummaryMetric label="Contagion Risk" value={`${summary.contagion_risk_score.toFixed(0)}`} color={riskScoreColor(summary.contagion_risk_score)} sub="out of 100" />
       <SummaryMetric label="7D Change" value={deltaStr} color={deltaColor} />
-      <SummaryMetric label="Systemic Asset" value={summary.systemic_asset || "—"} color="#dae2fd" sub="dominant risk source" />
-      <SummaryMetric label="Top Risk Pair" value={summary.top_risk_pair ? `${summary.top_risk_pair.source}↔${summary.top_risk_pair.target}` : "—"} color="#dae2fd" sub={summary.top_risk_pair ? `${summary.top_risk_pair.correlation.toFixed(2)} dep.` : undefined} />
+      <SummaryMetric label="Systemic Asset" value={summary.systemic_asset || "-"} color="#dae2fd" sub="dominant risk source" />
+      <SummaryMetric label="Top Risk Pair" value={summary.top_risk_pair ? `${summary.top_risk_pair.source}<->${summary.top_risk_pair.target}` : "-"} color="#dae2fd" sub={summary.top_risk_pair ? `${summary.top_risk_pair.correlation.toFixed(2)} dep.` : undefined} />
       <SummaryMetric label="Largest Cluster" value={largestClusterLabel} color="#dae2fd" />
     </div>
   );
 }
 
-// ── Main Component ──────────────────────────────────────────────────────
 
 export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioContagionMapProps) {
   const [data, setData] = useState<ContagionData | null>(null);
@@ -518,7 +457,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [graphView, setGraphView] = useState<GraphView>("focus");
   const [scope, setScope] = useState<ContagionScope>("all");
   const [responseScope, setResponseScope] = useState<ContagionScope>("all");
   const [scopeLabel, setScopeLabel] = useState<string>(getScopeLabel("all"));
@@ -633,7 +571,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     return `Market Data Source: ${normalized}`;
   }, [marketDataSource]);
 
-  // ── Loading ───────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="glass-card rounded-2xl flex flex-col border border-white/5 shadow-2xl overflow-hidden">
@@ -642,7 +579,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     );
   }
 
-  // ── Error ─────────────────────────────────────────────────────────
   if (error || !data) {
     const errorTitle =
       activeMode === "all"
@@ -667,7 +603,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
             </p>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0, flexWrap: "wrap" }}>
-            <ViewToggle view={graphView} onChange={setGraphView} disabled />
             <ScopeToggle scope={scope} onChange={setScope} />
             <ModeToggle mode={mode} onChange={setMode} />
           </div>
@@ -687,15 +622,12 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   }
 
   const { regime, summary, nodes, edges, clusters, display } = data;
-  // Exchange-scoped views already come back pre-filtered, so keep every node there.
-  // Only the all-exchange view uses a small threshold to suppress dust.
-  const meaningfulThreshold = activeScope === "all" ? 0.5 : 0;
-  const meaningfulNodes = nodes.filter((n) => n.weight_pct > meaningfulThreshold);
+  // Keep all assets/open positions from the selected scope+mode for display decisions.
+  const meaningfulNodes = nodes;
   const shouldShowLiveWarningBanner =
     (sourceState === "live" || sourceState === "demo") &&
     liveWarningItems.length > 0;
 
-  // ── Source state fallbacks ─────────────────────────────────────────
   if (sourceState === "no_connection" || sourceState === "error") {
     const title = sourceState === "no_connection"
       ? activeMode === "all"
@@ -712,9 +644,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
         <ModuleHeader
           regime={regime}
           generatedAt={data.generated_at}
-          graphView={graphView}
-          onViewChange={setGraphView}
-          viewToggleDisabled
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
@@ -729,7 +658,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     );
   }
 
-  // ── < 2 meaningful assets ──────────────────────────────────────────
   if (meaningfulNodes.length < 2) {
     const fallbackBody = statusMessage || (sourceState === "insufficient_holdings"
       ? activeScope === "all"
@@ -741,9 +669,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
         <ModuleHeader
           regime={regime}
           generatedAt={data.generated_at}
-          graphView={graphView}
-          onViewChange={setGraphView}
-          viewToggleDisabled
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
@@ -758,16 +683,12 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     );
   }
 
-  // ── No edges → low signal ─────────────────────────────────────────
   if (edges.length === 0) {
     return (
       <div className="glass-card rounded-2xl p-6 flex flex-col min-h-[400px] border border-white/5 shadow-2xl">
         <ModuleHeader
           regime={regime}
           generatedAt={data.generated_at}
-          graphView={graphView}
-          onViewChange={setGraphView}
-          viewToggleDisabled
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
@@ -783,7 +704,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     );
   }
 
-  // ── Pair risk fallback ────────────────────────────────────────────
   if (meaningfulNodes.length === 2) {
     const meaningfulIds = new Set(meaningfulNodes.map((n) => n.id));
     const pairEdge = edges.find((e) => meaningfulIds.has(e.source) && meaningfulIds.has(e.target));
@@ -793,9 +713,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
           <ModuleHeader
             regime={regime}
             generatedAt={data.generated_at}
-            graphView={graphView}
-            onViewChange={setGraphView}
-            viewToggleDisabled
             scope={scope}
             scopeLabel={activeScopeLabel}
             onScopeChange={setScope}
@@ -823,9 +740,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
         <ModuleHeader
           regime={regime}
           generatedAt={data.generated_at}
-          graphView={graphView}
-          onViewChange={setGraphView}
-          viewToggleDisabled
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
@@ -841,8 +755,20 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     );
   }
 
-  // ── Full graph view (3+ assets with edges) ────────────────────────
   const effectiveSelectedId = selectedNodeId || display.default_selected_asset || nodes[0]?.id;
+  const satelliteIds = new Set(
+    effectiveSelectedId
+      ? edges.flatMap((edge) => {
+          if (edge.source === effectiveSelectedId) return [edge.target];
+          if (edge.target === effectiveSelectedId) return [edge.source];
+          return [];
+        })
+      : [],
+  );
+  const satelliteCount = satelliteIds.size;
+  const maxPrimaryLinks =
+    satelliteCount < 5 ? satelliteCount : Math.floor(satelliteCount * 0.5);
+  const maxContextLinks = Math.max(0, satelliteCount - maxPrimaryLinks);
 
   return (
     <div className="glass-card rounded-2xl flex flex-col border border-white/5 shadow-2xl overflow-hidden">
@@ -850,8 +776,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
         <ModuleHeader
           regime={regime}
           generatedAt={data.generated_at}
-          graphView={graphView}
-          onViewChange={setGraphView}
           scope={scope}
           scopeLabel={activeScopeLabel}
           onScopeChange={setScope}
@@ -871,30 +795,20 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
         <SummaryRow summary={summary} clusters={clusters} />
       </div>
 
-      {/* ── Graph + Inspector two-panel ─── */}
       <div className="contagion-two-panel">
         {/* Graph pane (~70%) */}
         <div className="contagion-panel-graph">
-          {graphView === "overview" ? (
-            <NetworkOverview
+          {effectiveSelectedId ? (
+            <FocusView
               nodes={nodes}
               edges={edges}
-              clusters={clusters}
-              overviewEdgeIds={display.overview.edge_ids}
               selectedNodeId={effectiveSelectedId}
+              maxPrimaryLinks={maxPrimaryLinks}
+              maxContextLinks={maxContextLinks}
               onSelectNode={handleSelectNode}
             />
           ) : (
-            effectiveSelectedId && (
-              <FocusView
-                nodes={nodes}
-                edges={edges}
-                selectedNodeId={effectiveSelectedId}
-                maxPrimaryLinks={display.focus.max_primary_links}
-                maxContextLinks={display.focus.max_context_links}
-                onSelectNode={handleSelectNode}
-              />
-            )
+            <LowSignalFallback nodes={nodes} />
           )}
         </div>
 

@@ -12,7 +12,8 @@ POST /api/v1/dashboard/{user_id}/alerts/read  — Mark alerts as read
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta, timezone
+import re
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Literal, Optional
 
 from bson import ObjectId, Decimal128
@@ -50,6 +51,10 @@ DISPLAY_MODE_LABELS: dict[str, str] = {
     "future": "Future",
 }
 DisplayMode = Literal["all", "spot", "future"]
+ALERT_SEVERITY_VALUES = {"critical", "warning", "caution", "notice"}
+ALERT_CATEGORY_VALUES = {"behavioral", "liquidation", "portfolio"}
+ALERT_SEVERITY_ALIASES = {"danger": "critical"}
+ALERT_CRITICAL_COMPAT_VALUES = {"critical", "danger"}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -266,7 +271,7 @@ async def _load_live_holdings_snapshot(
         market_type = credential.get("market_type", "mixed")
         environment = str(credential.get("environment", "mainnet") or "mainnet").strip().lower()
 
-        if _mode_includes_spot(mode):
+        if _mode_includes_spot(mode) and market_type in {"spot", "mixed"}:
             try:
                 balances = await fetch_spot_balances(
                     exchange_id=exchange_id,
@@ -425,6 +430,365 @@ def _parse_user_object_id(user_id: str) -> ObjectId:
         raise HTTPException(status_code=400, detail="Invalid user_id format") from e
 
 
+def _parse_csv_values(value: Optional[str], *, lowercase: bool = True) -> list[str]:
+    if not value:
+        return []
+
+    values: list[str] = []
+    seen: set[str] = set()
+    for raw_item in value.split(","):
+        cleaned = raw_item.strip()
+        if not cleaned:
+            continue
+        normalised = cleaned.lower() if lowercase else cleaned
+        dedupe_key = normalised.lower() if not lowercase else normalised
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        values.append(normalised)
+
+    return values
+
+
+def _validate_allowed_values(param_name: str, values: list[str], allowed: set[str]) -> None:
+    invalid = [value for value in values if value not in allowed]
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid {param_name} value(s): {', '.join(invalid)}.",
+        )
+
+
+def _normalise_alert_severity(value: Any) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in ALERT_SEVERITY_ALIASES:
+        return ALERT_SEVERITY_ALIASES[raw]
+    if raw in ALERT_SEVERITY_VALUES:
+        return raw
+    return "notice"
+
+
+def _normalise_requested_severity_values(values: list[str]) -> list[str]:
+    normalised: list[str] = []
+    seen: set[str] = set()
+    invalid: list[str] = []
+
+    for value in values:
+        canonical = _normalise_alert_severity(value)
+        if value not in ALERT_SEVERITY_VALUES and value not in ALERT_SEVERITY_ALIASES:
+            invalid.append(value)
+            continue
+        if canonical in seen:
+            continue
+        seen.add(canonical)
+        normalised.append(canonical)
+
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid severity value(s): {', '.join(invalid)}.",
+        )
+    return normalised
+
+
+def _expand_severity_query_values(severity_values: list[str]) -> list[str]:
+    if not severity_values:
+        return []
+    expanded = set(severity_values)
+    for legacy, canonical in ALERT_SEVERITY_ALIASES.items():
+        if canonical in expanded:
+            expanded.add(legacy)
+    return sorted(expanded)
+
+
+def _parse_iso_datetime(value: str) -> tuple[datetime, bool]:
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("Date value is empty.")
+
+    is_date_only = len(cleaned) == 10
+    parsed = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+
+    if is_date_only:
+        parsed = datetime(parsed.year, parsed.month, parsed.day, tzinfo=timezone.utc)
+
+    return parsed, is_date_only
+
+
+def _build_triggered_filter(
+    *,
+    from_date: Optional[str],
+    to_date: Optional[str],
+) -> dict[str, Any]:
+    triggered_filter: dict[str, Any] = {}
+    from_dt: Optional[datetime] = None
+    to_dt: Optional[datetime] = None
+    to_is_date_only = False
+
+    if from_date:
+        try:
+            from_dt, _ = _parse_iso_datetime(from_date)
+            triggered_filter["$gte"] = from_dt
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Invalid from_date format. Use ISO date or datetime.") from e
+
+    if to_date:
+        try:
+            to_dt, to_is_date_only = _parse_iso_datetime(to_date)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Invalid to_date format. Use ISO date or datetime.") from e
+
+        if to_is_date_only:
+            triggered_filter["$lt"] = to_dt + timedelta(days=1)
+        else:
+            triggered_filter["$lte"] = to_dt
+
+    if from_dt and to_dt:
+        effective_to = to_dt + timedelta(days=1) if to_is_date_only else to_dt
+        if from_dt >= effective_to:
+            raise HTTPException(status_code=400, detail="from_date must be earlier than or equal to to_date.")
+
+    return triggered_filter
+
+
+def _build_alert_history_query(
+    *,
+    user_id: ObjectId,
+    from_date: Optional[str],
+    to_date: Optional[str],
+    severity: Optional[str],
+    category: Optional[str],
+    rule_id: Optional[str],
+    is_read: Optional[bool],
+    exchange_id: Optional[str],
+    search: Optional[str],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    severity_values_raw = _parse_csv_values(severity, lowercase=True)
+    severity_values = _normalise_requested_severity_values(severity_values_raw)
+    category_values = _parse_csv_values(category, lowercase=True)
+    rule_values = _parse_csv_values(rule_id, lowercase=False)
+    exchange_values = _parse_csv_values(exchange_id, lowercase=True)
+    clean_search = search.strip() if isinstance(search, str) else ""
+
+    _validate_allowed_values("category", category_values, ALERT_CATEGORY_VALUES)
+
+    triggered_filter = _build_triggered_filter(from_date=from_date, to_date=to_date)
+    severity_query_values = _expand_severity_query_values(severity_values)
+
+    query: dict[str, Any] = {"user_id": user_id}
+    if triggered_filter:
+        query["triggered_at"] = triggered_filter
+    if severity_query_values:
+        query["severity"] = {"$in": severity_query_values}
+    if category_values:
+        query["category"] = {"$in": category_values}
+    if rule_values:
+        query["rule_id"] = {"$in": rule_values}
+    if is_read is not None:
+        query["is_read"] = is_read
+    if exchange_values:
+        query["trigger_context.exchange_id"] = {"$in": exchange_values}
+    if clean_search:
+        escaped_search = re.escape(clean_search)
+        query["$or"] = [
+            {"title": {"$regex": escaped_search, "$options": "i"}},
+            {"message": {"$regex": escaped_search, "$options": "i"}},
+            {"rule_name": {"$regex": escaped_search, "$options": "i"}},
+            {"rule_id": {"$regex": escaped_search, "$options": "i"}},
+        ]
+
+    filters_applied = {
+        "from_date": from_date.strip() if isinstance(from_date, str) and from_date.strip() else None,
+        "to_date": to_date.strip() if isinstance(to_date, str) and to_date.strip() else None,
+        "severity": severity_values,
+        "category": category_values,
+        "rule_id": rule_values,
+        "is_read": is_read,
+        "exchange_id": exchange_values,
+        "search": clean_search or None,
+    }
+
+    return query, filters_applied
+
+
+def _parse_iso_timestamp(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _format_day_label(day: date, *, today: date, yesterday: date) -> str:
+    if day == today:
+        return "Today"
+    if day == yesterday:
+        return "Yesterday"
+    return day.strftime("%A, %b %d")
+
+
+def _normalise_alert_history_document(doc: dict[str, Any]) -> dict[str, Any]:
+    serialised = _serialise_doc(doc)
+    trigger_context = serialised.get("trigger_context")
+    trigger_context_map = trigger_context if isinstance(trigger_context, dict) else {}
+
+    raw_rule_id = serialised.get("rule_id")
+    raw_rule_name = serialised.get("rule_name")
+    raw_title = serialised.get("title")
+    raw_message = serialised.get("message")
+    raw_triggered_at = serialised.get("triggered_at")
+
+    rule_id = str(raw_rule_id or "").strip()
+    rule_name = str(raw_rule_name or rule_id or "Unknown rule").strip()
+    title = str(raw_title or "Untitled alert").strip()
+    message = str(raw_message or "Alert details are unavailable.").strip()
+    severity = _normalise_alert_severity(serialised.get("severity"))
+    category = str(serialised.get("category") or "behavioral").strip().lower()
+    recommendation = serialised.get("recommendation")
+    recommendation_text = (
+        str(recommendation).strip()
+        if isinstance(recommendation, str) and recommendation.strip()
+        else None
+    )
+
+    related_trade_ids = serialised.get("related_trade_ids")
+    related_trade_id_list = (
+        [str(item) for item in related_trade_ids if str(item).strip()]
+        if isinstance(related_trade_ids, list)
+        else []
+    )
+
+    triggered_at = raw_triggered_at
+    triggered_at_text = str(triggered_at).strip() if isinstance(triggered_at, str) else None
+    exchange_id = trigger_context_map.get("exchange_id")
+    exchange_id_text = str(exchange_id).strip().lower() if isinstance(exchange_id, str) and exchange_id.strip() else None
+    symbol = trigger_context_map.get("trigger_symbol")
+    symbol_text = str(symbol).strip() if isinstance(symbol, str) and symbol.strip() else None
+
+    partial_missing_fields: list[str] = []
+    if not isinstance(raw_title, str) or not raw_title.strip():
+        partial_missing_fields.append("title")
+    if not isinstance(raw_message, str) or not raw_message.strip():
+        partial_missing_fields.append("message")
+    if not isinstance(raw_rule_name, str) or not raw_rule_name.strip():
+        partial_missing_fields.append("rule_name")
+    if not isinstance(raw_triggered_at, str) or not raw_triggered_at.strip():
+        partial_missing_fields.append("triggered_at")
+
+    alert_id = (
+        str(serialised.get("_id") or "").strip()
+        or str(serialised.get("id") or "").strip()
+        or f"{rule_id or 'alert'}-{triggered_at_text or 'unknown'}"
+    )
+
+    return {
+        "id": alert_id,
+        "rule_id": rule_id,
+        "rule_name": rule_name,
+        "severity": severity,
+        "category": category,
+        "title": title,
+        "message": message,
+        "recommendation": recommendation_text,
+        "triggered_at": triggered_at_text,
+        "is_read": bool(serialised.get("is_read", False)),
+        "read_at": serialised.get("read_at"),
+        "is_dismissed": bool(serialised.get("is_dismissed", False)),
+        "exchange_id": exchange_id_text,
+        "symbol": symbol_text,
+        "trigger_context": trigger_context_map,
+        "related_trade_ids": related_trade_id_list,
+        "is_partial": len(partial_missing_fields) > 0,
+        "partial_missing_fields": partial_missing_fields,
+    }
+
+
+def _group_alerts_by_day(alerts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    today = datetime.now(tz=timezone.utc).date()
+    yesterday = today - timedelta(days=1)
+    grouped: dict[str, dict[str, Any]] = {}
+    ordered_keys: list[str] = []
+
+    for alert in alerts:
+        triggered_at = _parse_iso_timestamp(alert.get("triggered_at"))
+        if triggered_at is None:
+            day_key = "unknown"
+            day_label = "Unknown date"
+        else:
+            day_value = triggered_at.date()
+            day_key = day_value.isoformat()
+            day_label = _format_day_label(day_value, today=today, yesterday=yesterday)
+
+        if day_key not in grouped:
+            grouped[day_key] = {
+                "date": day_key,
+                "label": day_label,
+                "alert_count": 0,
+                "severity_summary": {
+                    "critical": 0,
+                    "warning": 0,
+                    "caution": 0,
+                    "notice": 0,
+                },
+                "alerts": [],
+            }
+            ordered_keys.append(day_key)
+
+        group = grouped[day_key]
+        group["alert_count"] += 1
+        severity = str(alert.get("severity") or "notice").lower()
+        if severity in group["severity_summary"]:
+            group["severity_summary"][severity] += 1
+        group["alerts"].append(alert)
+
+    return [grouped[key] for key in ordered_keys]
+
+
+def _coerce_object_id(value: Any) -> Optional[ObjectId]:
+    if isinstance(value, ObjectId):
+        return value
+    if isinstance(value, str):
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        try:
+            return ObjectId(cleaned)
+        except Exception:
+            return None
+    return None
+
+
+def _normalise_trade_reference(doc: dict[str, Any], roles_by_id: dict[str, list[str]]) -> dict[str, Any]:
+    serialised = _serialise_doc(doc)
+    trade_id = str(serialised.get("_id") or "").strip()
+    return {
+        "id": trade_id,
+        "exchange_id": str(serialised.get("exchange_id") or "").strip().lower() or None,
+        "symbol": str(serialised.get("symbol") or "").strip() or None,
+        "side": str(serialised.get("side") or "").strip().lower() or None,
+        "leverage": int(_safe_float(serialised.get("leverage")) or 0) or None,
+        "realized_pnl_usd": str(serialised.get("realized_pnl_usd") or "").strip() or None,
+        "notional_value_usd": str(serialised.get("notional_value_usd") or "").strip() or None,
+        "opened_at": serialised.get("opened_at"),
+        "closed_at": serialised.get("closed_at"),
+        "is_win": bool(serialised.get("is_win", False)),
+        "pnl_category": str(serialised.get("pnl_category") or "").strip() or None,
+        "record_type": str(serialised.get("record_type") or "").strip() or None,
+        "duration_seconds": int(_safe_float(serialised.get("duration_seconds")) or 0) or None,
+        "roles": roles_by_id.get(trade_id, []),
+    }
+
+
 async def _get_latest_metrics_doc(user_id: ObjectId) -> Optional[dict[str, Any]]:
     db = get_database()
     return await db.risk_metrics.find_one(
@@ -439,6 +803,7 @@ async def _build_dashboard_overview(user_id: ObjectId) -> dict[str, Any]:
     metrics_doc = await _get_latest_metrics_doc(user_id)
 
     live_overviews: list[dict[str, Any]] = []
+    portfolio_value_by_exchange: dict[str, float] = {}
     spot_assets: list[dict[str, Any]] = []
     warnings: list[str] = []
     live_snapshot_at: Optional[datetime] = None
@@ -457,9 +822,14 @@ async def _build_dashboard_overview(user_id: ObjectId) -> dict[str, Any]:
                 market_type=credential.get("market_type", "mixed"),
             )
             live_overviews.append(live_overview)
+            exchange_id = str(live_overview.get("exchange_id") or credential["exchange_id"]).strip().lower()
+            portfolio_value_by_exchange[exchange_id] = round(
+                portfolio_value_by_exchange.get(exchange_id, 0.0)
+                + _safe_float(live_overview.get("total_portfolio_value_usd")),
+                2,
+            )
             live_snapshot_at = datetime.now(tz=timezone.utc)
             warnings.extend(live_overview.get("warnings", []))
-            exchange_id = credential["exchange_id"]
             spot_assets.extend(
                 _normalise_spot_asset_snapshot(
                     asset,
@@ -530,6 +900,13 @@ async def _build_dashboard_overview(user_id: ObjectId) -> dict[str, Any]:
     return {
         "status": "ok",
         "total_portfolio_value": total_portfolio_value,
+        "portfolio_value_by_exchange": [
+            {
+                "exchange_id": exchange_id,
+                "portfolio_value": value,
+            }
+            for exchange_id, value in sorted(portfolio_value_by_exchange.items())
+        ],
         "total_unrealized_pnl": total_unrealized_pnl,
         "spot_total_value": total_spot_value,
         "spot_asset_count": len(spot_assets),
@@ -787,6 +1164,205 @@ async def get_recent_alerts(
     }
 
 
+@router.get("/{user_id}/alerts/history")
+async def get_alert_history(
+    user_id: str,
+    from_date: Optional[str] = Query(None, description="ISO date or datetime lower bound"),
+    to_date: Optional[str] = Query(None, description="ISO date or datetime upper bound"),
+    severity: Optional[str] = Query(None, description="Comma-separated severities"),
+    category: Optional[str] = Query(None, description="Comma-separated categories"),
+    rule_id: Optional[str] = Query(None, description="Comma-separated rule ids"),
+    is_read: Optional[bool] = Query(None, description="Read-state filter"),
+    exchange_id: Optional[str] = Query(None, description="Comma-separated exchange ids"),
+    search: Optional[str] = Query(None, max_length=120, description="Case-insensitive title/message/rule search"),
+    page: int = Query(1, ge=1, description="1-based page index"),
+    page_size: int = Query(50, ge=1, le=200, description="Page size"),
+):
+    """
+    Fetch alert history with archive-oriented filtering, grouping, and summary metadata.
+    """
+    uid = _parse_user_object_id(user_id)
+    db = get_database()
+
+    query, filters_applied = _build_alert_history_query(
+        user_id=uid,
+        from_date=from_date,
+        to_date=to_date,
+        severity=severity,
+        category=category,
+        rule_id=rule_id,
+        is_read=is_read,
+        exchange_id=exchange_id,
+        search=search,
+    )
+
+    total_all = await db.alerts_log.count_documents({"user_id": uid})
+    total_filtered = await db.alerts_log.count_documents(query)
+    cursor = db.alerts_log.find(query).sort("triggered_at", -1)
+
+    all_alert_rows: list[dict[str, Any]] = []
+    async for doc in cursor:
+        all_alert_rows.append(_normalise_alert_history_document(doc))
+
+    grouped_alerts_all = _group_alerts_by_day(all_alert_rows)
+    total_filtered_days = len(grouped_alerts_all)
+
+    total_pages = 1
+    resolved_page = page
+    if total_filtered_days > 0:
+        total_pages = (total_filtered_days + page_size - 1) // page_size
+        resolved_page = min(page, total_pages)
+
+    day_skip = (resolved_page - 1) * page_size
+    grouped_alerts = grouped_alerts_all[day_skip : day_skip + page_size]
+    partial_row_count = sum(
+        1
+        for group in grouped_alerts
+        for alert_row in group.get("alerts", [])
+        if bool(alert_row.get("is_partial"))
+    )
+
+    summary_result = await db.alerts_log.aggregate(
+        [
+            {"$match": query},
+            {
+                "$group": {
+                    "_id": None,
+                    "unread": {"$sum": {"$cond": [{"$eq": ["$is_read", False]}, 1, 0]}},
+                    "critical": {
+                        "$sum": {
+                            "$cond": [
+                                {"$in": ["$severity", list(ALERT_CRITICAL_COMPAT_VALUES)]},
+                                1,
+                                0,
+                            ]
+                        }
+                    },
+                    "warning": {"$sum": {"$cond": [{"$eq": ["$severity", "warning"]}, 1, 0]}},
+                }
+            },
+        ]
+    ).to_list(length=1)
+    summary_doc = summary_result[0] if summary_result else {}
+
+    last_7_days_count = await db.alerts_log.count_documents(
+        {
+            "user_id": uid,
+            "triggered_at": {"$gte": datetime.now(tz=timezone.utc) - timedelta(days=7)},
+        }
+    )
+
+    options_query: dict[str, Any] = {"user_id": uid}
+    if "triggered_at" in query:
+        options_query["triggered_at"] = query["triggered_at"]
+
+    options_result = await db.alerts_log.aggregate(
+        [
+            {"$match": options_query},
+            {
+                "$facet": {
+                    "severity": [
+                        {"$group": {"_id": "$severity"}},
+                        {"$sort": {"_id": 1}},
+                    ],
+                    "category": [
+                        {"$group": {"_id": "$category"}},
+                        {"$sort": {"_id": 1}},
+                    ],
+                    "rules": [
+                        {"$group": {"_id": {"rule_id": "$rule_id", "rule_name": "$rule_name"}, "count": {"$sum": 1}}},
+                        {"$sort": {"count": -1, "_id.rule_name": 1}},
+                        {"$limit": 200},
+                    ],
+                    "exchanges": [
+                        {"$match": {"trigger_context.exchange_id": {"$exists": True, "$ne": None, "$ne": ""}}},
+                        {"$group": {"_id": "$trigger_context.exchange_id"}},
+                        {"$sort": {"_id": 1}},
+                    ],
+                }
+            },
+        ]
+    ).to_list(length=1)
+
+    options_doc = options_result[0] if options_result else {}
+    severity_options = sorted(
+        {
+            _normalise_alert_severity(row.get("_id"))
+            for row in options_doc.get("severity", [])
+            if str(row.get("_id") or "").strip()
+        }
+    )
+    severity_options = [value for value in severity_options if value in ALERT_SEVERITY_VALUES]
+    category_options = sorted(
+        {
+            str(row.get("_id")).strip().lower()
+            for row in options_doc.get("category", [])
+            if str(row.get("_id") or "").strip()
+        }
+    )
+    category_options = [value for value in category_options if value in ALERT_CATEGORY_VALUES]
+
+    rule_options: list[dict[str, Any]] = []
+    for row in options_doc.get("rules", []):
+        row_id = row.get("_id")
+        if not isinstance(row_id, dict):
+            continue
+        next_rule_id = str(row_id.get("rule_id") or "").strip()
+        next_rule_name = str(row_id.get("rule_name") or next_rule_id or "Unknown rule").strip()
+        if not next_rule_id:
+            continue
+        rule_options.append(
+            {
+                "rule_id": next_rule_id,
+                "rule_name": next_rule_name,
+                "count": int(row.get("count", 0)),
+            }
+        )
+
+    exchange_options = sorted(
+        {
+            str(row.get("_id")).strip().lower()
+            for row in options_doc.get("exchanges", [])
+            if str(row.get("_id") or "").strip()
+        }
+    )
+
+    warnings: list[str] = []
+    if partial_row_count > 0:
+        warnings.append("Some alert details are unavailable, but the history list is still readable.")
+
+    return {
+        "status": "ok",
+        "summary": {
+            "total_filtered": total_filtered,
+            "total_all": total_all,
+            "unread": int(summary_doc.get("unread", 0)),
+            "critical": int(summary_doc.get("critical", 0)),
+            "warning": int(summary_doc.get("warning", 0)),
+            "last_7_days": last_7_days_count,
+        },
+        "filters_applied": filters_applied,
+        "filters_available": {
+            "severity": severity_options or sorted(ALERT_SEVERITY_VALUES),
+            "category": category_options or sorted(ALERT_CATEGORY_VALUES),
+            "rules": rule_options,
+            "exchanges": exchange_options,
+        },
+        "groups": grouped_alerts,
+        "pagination": {
+            "page": resolved_page,
+            "page_size": page_size,
+            "total": total_filtered_days,
+            "total_days": total_filtered_days,
+            "total_alerts": total_filtered,
+            "total_pages": total_pages,
+            "has_next": resolved_page < total_pages,
+            "has_previous": resolved_page > 1,
+        },
+        "warnings": warnings,
+    }
+
+
 @router.get("/{user_id}/history")
 async def get_metrics_history(
     user_id: str,
@@ -900,30 +1476,201 @@ async def refresh_dashboard(user_id: str):
         raise HTTPException(status_code=404, detail=str(e)) from e
 
 
+@router.get("/{user_id}/alerts/{alert_id}/related-trades")
+async def get_alert_related_trades(user_id: str, alert_id: str):
+    """
+    Return trade-reference evidence linked to an alert via ``related_trade_ids``
+    and rule-specific trigger context IDs.
+    """
+    uid = _parse_user_object_id(user_id)
+    try:
+        aid = ObjectId(alert_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid alert_id format") from e
+
+    db = get_database()
+    alert_doc = await db.alerts_log.find_one(
+        {"user_id": uid, "_id": aid},
+        projection={
+            "_id": 1,
+            "related_trade_ids": 1,
+            "trigger_context": 1,
+            "rule_id": 1,
+            "rule_name": 1,
+        },
+    )
+    if not alert_doc:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    trigger_context = alert_doc.get("trigger_context")
+    trigger_map = trigger_context if isinstance(trigger_context, dict) else {}
+
+    roles_by_id: dict[str, list[str]] = {}
+    ordered_trade_ids: list[str] = []
+
+    def register_trade_id(raw_value: Any, role: str) -> None:
+        oid = _coerce_object_id(raw_value)
+        if oid is None:
+            return
+        sid = str(oid)
+        if sid not in roles_by_id:
+            roles_by_id[sid] = []
+            ordered_trade_ids.append(sid)
+        if role not in roles_by_id[sid]:
+            roles_by_id[sid].append(role)
+
+    for value in alert_doc.get("related_trade_ids", []) or []:
+        register_trade_id(value, "related_reference")
+
+    register_trade_id(trigger_map.get("loss_trade_id"), "loss_trade")
+    register_trade_id(trigger_map.get("trigger_trade_id"), "trigger_trade")
+
+    if not ordered_trade_ids:
+        return {
+            "status": "ok",
+            "alert_id": str(aid),
+            "rule_id": str(alert_doc.get("rule_id") or "").strip() or None,
+            "rule_name": str(alert_doc.get("rule_name") or "").strip() or None,
+            "trades": [],
+            "missing_trade_ids": [],
+            "warnings": ["No linked trade references were recorded for this alert."],
+        }
+
+    trade_object_ids = [ObjectId(value) for value in ordered_trade_ids]
+    trade_docs = await db.trade_history.find(
+        {"user_id": uid, "_id": {"$in": trade_object_ids}},
+        projection={
+            "_id": 1,
+            "exchange_id": 1,
+            "symbol": 1,
+            "side": 1,
+            "leverage": 1,
+            "realized_pnl_usd": 1,
+            "notional_value_usd": 1,
+            "opened_at": 1,
+            "closed_at": 1,
+            "is_win": 1,
+            "pnl_category": 1,
+            "record_type": 1,
+            "duration_seconds": 1,
+        },
+    ).to_list(length=max(1, len(ordered_trade_ids)))
+
+    normalised_by_id = {
+        str(doc.get("_id")): _normalise_trade_reference(doc, roles_by_id)
+        for doc in trade_docs
+    }
+    ordered_trade_rows = [
+        normalised_by_id[trade_id]
+        for trade_id in ordered_trade_ids
+        if trade_id in normalised_by_id
+    ]
+
+    missing_trade_ids = [
+        trade_id for trade_id in ordered_trade_ids if trade_id not in normalised_by_id
+    ]
+    warnings: list[str] = []
+    if missing_trade_ids:
+        warnings.append("Some referenced trades could not be found in current history records.")
+
+    return {
+        "status": "ok",
+        "alert_id": str(aid),
+        "rule_id": str(alert_doc.get("rule_id") or "").strip() or None,
+        "rule_name": str(alert_doc.get("rule_name") or "").strip() or None,
+        "trades": ordered_trade_rows,
+        "missing_trade_ids": missing_trade_ids,
+        "warnings": warnings,
+    }
+
+
+@router.post("/{user_id}/alerts/{alert_id}/read")
+async def mark_single_alert_read(user_id: str, alert_id: str):
+    """
+    Mark a single alert as read for the given user.
+    """
+    uid = _parse_user_object_id(user_id)
+    try:
+        aid = ObjectId(alert_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Invalid alert_id format") from e
+
+    db = get_database()
+    now = datetime.now(tz=timezone.utc)
+
+    result = await db.alerts_log.update_one(
+        {"user_id": uid, "_id": aid, "is_read": False},
+        {"$set": {"is_read": True, "read_at": now}},
+    )
+    if result.modified_count > 0:
+        return {
+            "status": "ok",
+            "marked_read": 1,
+            "already_read": False,
+            "read_at": now.isoformat(),
+        }
+
+    existing = await db.alerts_log.find_one(
+        {"user_id": uid, "_id": aid},
+        projection={"_id": 1, "is_read": 1},
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    return {
+        "status": "ok",
+        "marked_read": 0,
+        "already_read": True,
+    }
+
+
 @router.post("/{user_id}/alerts/read")
-async def mark_alerts_read(user_id: str):
+async def mark_alerts_read(
+    user_id: str,
+    from_date: Optional[str] = Query(None, description="ISO date or datetime lower bound"),
+    to_date: Optional[str] = Query(None, description="ISO date or datetime upper bound"),
+    severity: Optional[str] = Query(None, description="Comma-separated severities"),
+    category: Optional[str] = Query(None, description="Comma-separated categories"),
+    rule_id: Optional[str] = Query(None, description="Comma-separated rule ids"),
+    is_read: Optional[bool] = Query(None, description="Read-state filter"),
+    exchange_id: Optional[str] = Query(None, description="Comma-separated exchange ids"),
+    search: Optional[str] = Query(None, max_length=120, description="Case-insensitive title/message/rule search"),
+):
     """
     Mark all unread alerts for a user as read.
 
     DB Schema §4.3 example query:
       updateMany({ user_id, is_read: false }, { $set: { is_read: true, read_at: now } })
     """
-    try:
-        uid = ObjectId(user_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid user_id format")
+    uid = _parse_user_object_id(user_id)
+
+    query, filters_applied = _build_alert_history_query(
+        user_id=uid,
+        from_date=from_date,
+        to_date=to_date,
+        severity=severity,
+        category=category,
+        rule_id=rule_id,
+        is_read=is_read,
+        exchange_id=exchange_id,
+        search=search,
+    )
+    # Bulk read marks unread alerts in the active filtered scope only.
+    query["is_read"] = False
 
     db = get_database()
     now = datetime.now(tz=timezone.utc)
 
     result = await db.alerts_log.update_many(
-        {"user_id": uid, "is_read": False},
+        query,
         {"$set": {"is_read": True, "read_at": now}},
     )
 
     return {
         "status": "ok",
         "marked_read": result.modified_count,
+        "scope": "filtered",
+        "filters_applied": filters_applied,
     }
 
 @router.get("/{user_id}/contagion-legacy")

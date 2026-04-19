@@ -1,5 +1,5 @@
-"""
-RiskHub — Asynchronous MongoDB Connection Layer
+﻿"""
+RiskHub - Asynchronous MongoDB Connection Layer
 ================================================
 Uses Motor (async MongoDB driver) with connection pooling configured per
 the Database Architecture Document v1.0, Section 6.4.
@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Global handles — initialised on FastAPI startup, torn down on shutdown
+# Global handles - initialised on FastAPI startup, torn down on shutdown
 # ---------------------------------------------------------------------------
 _client: AsyncIOMotorClient | None = None
 _db: AsyncIOMotorDatabase | None = None
@@ -43,7 +43,7 @@ async def connect_to_mongo() -> None:
     mongo_url = get_mongo_url()
     db_name = get_database_name()
 
-    logger.info("Connecting to MongoDB at %s (db=%s) …", mongo_url, db_name)
+    logger.info("Connecting to MongoDB at %s (db=%s) ...", mongo_url, db_name)
 
     _client = AsyncIOMotorClient(
         mongo_url,
@@ -57,7 +57,7 @@ async def connect_to_mongo() -> None:
 
     # Quick connectivity check (raises on failure)
     await _client.admin.command("ping")
-    logger.info("MongoDB connection established ✓")
+    logger.info("MongoDB connection established OK")
 
 
 async def close_mongo_connection() -> None:
@@ -84,20 +84,20 @@ def get_database() -> AsyncIOMotorDatabase:
 
 
 # ---------------------------------------------------------------------------
-# Index bootstrapping — ensures all indexes from the Schema Document exist
+# Index bootstrapping - ensures all indexes from the Schema Document exist
 # ---------------------------------------------------------------------------
 async def ensure_indexes() -> None:
     """
     Idempotently create every index defined in the Database Architecture
     Document v1.0 (Sections 1.3, 2.3, 3.3, 4.3).
 
-    Safe to call on every startup — ``create_index`` is a no-op when the
+    Safe to call on every startup - ``create_index`` is a no-op when the
     index already exists with identical options.
     """
     db = get_database()
-    logger.info("Ensuring MongoDB indexes …")
+    logger.info("Ensuring MongoDB indexes ...")
 
-    # ── users ────────────────────────────────────────────────────────────
+    # -- users -------------------------------------------------------------
     users = db.users
     await users.create_index(
         "email", unique=True, name="idx_email_unique"
@@ -119,7 +119,7 @@ async def ensure_indexes() -> None:
         expireAfterSeconds=0, name="idx_siwe_nonce_ttl",
     )
 
-    # ── trade_history ────────────────────────────────────────────────────
+    # -- trade_history -----------------------------------------------------
     trades = db.trade_history
     await trades.create_index(
         [("user_id", 1), ("exchange_id", 1), ("closed_at", -1)],
@@ -142,7 +142,7 @@ async def ensure_indexes() -> None:
         name="idx_user_iswin_closedat",
     )
 
-    # ── risk_metrics ─────────────────────────────────────────────────────
+    # -- risk_metrics ------------------------------------------------------
     metrics = db.risk_metrics
     await metrics.create_index(
         [("user_id", 1), ("calculated_at", -1)],
@@ -168,7 +168,7 @@ async def ensure_indexes() -> None:
         name="idx_metrics_ttl_1year",
     )
 
-    # ── alerts_log ───────────────────────────────────────────────────────
+    # -- alerts_log --------------------------------------------------------
     alerts = db.alerts_log
     await alerts.create_index(
         [("user_id", 1), ("triggered_at", -1)],
@@ -187,6 +187,14 @@ async def ensure_indexes() -> None:
         name="idx_user_severity_triggered",
     )
     await alerts.create_index(
+        [("user_id", 1), ("category", 1), ("triggered_at", -1)],
+        name="idx_user_category_triggered",
+    )
+    await alerts.create_index(
+        [("user_id", 1), ("trigger_context.exchange_id", 1), ("triggered_at", -1)],
+        name="idx_user_exchange_triggered",
+    )
+    await alerts.create_index(
         [("rate_limit_key", 1), ("triggered_at", -1)],
         name="idx_rate_limit_key",
     )
@@ -196,4 +204,29 @@ async def ensure_indexes() -> None:
         name="idx_alerts_ttl_30days",
     )
 
-    logger.info("All indexes ensured ✓")
+    # -- risk_identity_profiles -------------------------------------------------
+    identity_profiles = db.risk_identity_profiles
+    await identity_profiles.create_index(
+        [("user_id", 1), ("version", -1)],
+        unique=True,
+        name="idx_identity_profile_user_version_unique",
+    )
+    await identity_profiles.create_index(
+        [("user_id", 1), ("saved_at", -1)],
+        name="idx_identity_profile_user_saved_desc",
+    )
+    await identity_profiles.create_index(
+        [("user_id", 1), ("profile_hash", 1), ("saved_at", -1)],
+        name="idx_identity_profile_user_hash_saved",
+    )
+    await identity_profiles.create_index(
+        "profile_id",
+        unique=True,
+        name="idx_identity_profile_id_unique",
+    )
+
+    logger.info("All indexes ensured OK")
+
+
+
+

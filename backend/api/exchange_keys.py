@@ -48,6 +48,24 @@ class DeleteExchangeResponse(BaseModel):
     remaining_count: int
 
 
+def _clean_credential_input(value: str, *, collapse_internal_whitespace: bool = True) -> str:
+    cleaned = str(value or "").strip()
+    cleaned = (
+        cleaned.replace("\u200b", "")
+        .replace("\u200c", "")
+        .replace("\u200d", "")
+        .replace("\ufeff", "")
+    )
+
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'", "`"}:
+        cleaned = cleaned[1:-1].strip()
+
+    if collapse_internal_whitespace:
+        cleaned = "".join(cleaned.split())
+
+    return cleaned
+
+
 def _parse_user_id(user_id: str) -> ObjectId:
     try:
         return ObjectId(user_id)
@@ -94,9 +112,13 @@ async def connect_exchange(user_id: str, req: ConnectExchangeRequest):
     if exchange_id not in SUPPORTED_EXCHANGES:
         raise HTTPException(status_code=400, detail=f"Exchange '{exchange_id}' is not supported.")
         
-    api_key = "".join(req.api_key.split())
-    api_secret = "".join(req.api_secret.split())
-    passphrase = req.passphrase.strip() if req.passphrase else None
+    api_key = _clean_credential_input(req.api_key, collapse_internal_whitespace=True)
+    api_secret = _clean_credential_input(req.api_secret, collapse_internal_whitespace=True)
+    passphrase = (
+        _clean_credential_input(req.passphrase, collapse_internal_whitespace=False)
+        if req.passphrase
+        else None
+    )
 
     if not api_key or not api_secret:
         raise HTTPException(status_code=400, detail="API key and API secret are required.")

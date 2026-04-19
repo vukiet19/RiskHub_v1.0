@@ -1,0 +1,32 @@
+
+> frontend@0.1.0 dev
+> next dev
+
+  ▲ Next.js 14.2.35
+  - Local:        http://localhost:3000
+
+ ✓ Starting...
+ ✓ Ready in 1528ms
+ ○ Compiling /dashboard ...
+ ✓ Compiled /dashboard in 1683ms (729 modules)
+ GET /alert-history 200 in 1910ms
+ GET /sbt-identity 200 in 1912ms
+ GET /dashboard 200 in 1914ms
+ GET /risk-analysis 200 in 1956ms
+ ✓ Compiled /favicon.ico in 356ms (405 modules)
+ GET /favicon.ico 200 in 520ms
+ GET /favicon.ico 200 in 423ms
+ GET /favicon.ico 200 in 422ms
+ GET /favicon.ico 200 in 523ms
+ GET /dashboard 200 in 95ms
+ GET /risk-analysis 200 in 36ms
+ GET /alert-history 200 in 40ms
+ GET /sbt-identity 200 in 65ms
+ GET /dashboard 200 in 55ms
+ GET /alert-history 200 in 64ms
+ GET /risk-analysis 200 in 73ms
+ GET /sbt-identity 200 in 66ms
+ GET /favicon.ico 200 in 10ms
+ GET /favicon.ico 200 in 9ms
+ GET /favicon.ico 200 in 20ms
+ GET /favicon.ico 200 in 19ms

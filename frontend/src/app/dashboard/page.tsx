@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { AppShell } from "../../components/AppShell";
 import { Navbar } from "../../components/Navbar";
 import { PortfolioCard, type ExchangeData } from "../../components/PortfolioCard";
-import { AlertsPanel, AlertData } from "../../components/AlertsPanel";
+import type { AlertData } from "../../components/AlertsPanel";
 import { PositionData, OpenPositions } from "../../components/OpenPositions";
 import { SpotAssets, type SpotAssetData } from "../../components/SpotAssets";
 import {
@@ -32,6 +32,10 @@ interface DashboardMetrics {
 
 interface DashboardOverview {
   total_portfolio_value: number;
+  portfolio_value_by_exchange?: {
+    exchange_id: string;
+    portfolio_value: number;
+  }[];
   total_unrealized_pnl: number;
   spot_total_value?: number;
   spot_asset_count?: number;
@@ -73,6 +77,14 @@ interface LivePositionsResponse {
   warnings?: string[];
 }
 
+const SUPPRESSED_DASHBOARD_WARNING_PATTERNS = [
+  /Binance Demo spot balances are simulated and isolated from Binance mainnet accounts/i,
+];
+
+function isSuppressedDashboardWarning(warning: string): boolean {
+  return SUPPRESSED_DASHBOARD_WARNING_PATTERNS.some((pattern) => pattern.test(warning));
+}
+
 interface ApiAlert {
   _id?: string;
   rule_id: string;
@@ -109,24 +121,77 @@ async function readErrorMessage(response: Response): Promise<string> {
   return response.statusText || `Request failed with status ${response.status}`;
 }
 
-// ── Compact Discipline Score Card ────────────────────────────────────────
+function toNumber(value: string | number | null | undefined): number {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+  const parsed = Number.parseFloat(value ?? "0");
+  return Number.isFinite(parsed) ? parsed : 0;
+}
 
-function DisciplineScoreCard({
+function formatCurrency(value: number): string {
+  return toNumber(value).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+
+function PortfolioValueCard({
+  totalValue,
+  binanceValue,
+  okxValue,
+  isConnected,
+}: {
+  totalValue: number;
+  binanceValue: number;
+  okxValue: number;
+  isConnected: boolean;
+}) {
+  return (
+    <div className="compact-metric-card">
+      <div className="text-xs font-semibold tracking-wide text-text-primary">
+        Total Portfolio Value
+      </div>
+      <div className="mt-2 font-mono text-2xl font-bold tracking-tight text-white">
+        ${formatCurrency(totalValue)}
+      </div>
+      <div className="mt-4 space-y-2 border-t border-white/10 pt-3">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-semibold uppercase tracking-[0.18em] text-text-secondary">Binance</span>
+          <span className="font-mono font-semibold text-text-primary">${formatCurrency(binanceValue)}</span>
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-semibold uppercase tracking-[0.18em] text-text-secondary">OKX</span>
+          <span className="font-mono font-semibold text-text-primary">${formatCurrency(okxValue)}</span>
+        </div>
+      </div>
+      <div className="mt-3 text-[10px] uppercase tracking-widest text-text-secondary">
+        {isConnected ? "Live exchange aggregation" : "Connect exchanges to load live portfolio values"}
+      </div>
+    </div>
+  );
+}
+
+function DisciplineDrawdownCard({
   score,
   grade,
+  drawdownPct,
   isLoading,
   hasMetrics,
   isConnected,
 }: {
   score: number;
   grade: string;
+  drawdownPct: string | number;
   isLoading: boolean;
   hasMetrics: boolean;
   isConnected: boolean;
 }) {
+  const safeScore = Math.max(0, Math.min(100, toNumber(score)));
   const r = 18;
   const circumference = 2 * Math.PI * r;
-  const offset = circumference - (circumference * score) / 100;
+  const offset = circumference - (circumference * safeScore) / 100;
+  const drawdownValue = Math.abs(toNumber(drawdownPct));
 
   return (
     <div className="compact-metric-card">
@@ -134,14 +199,29 @@ function DisciplineScoreCard({
         <svg width={48} height={48} viewBox="0 0 52 52" style={{ flexShrink: 0 }}>
           <circle cx={26} cy={26} r={r} fill="none" stroke="#2d3449" strokeWidth={4} />
           <circle
-            cx={26} cy={26} r={r} fill="none" stroke="#1a56db" strokeWidth={4}
-            strokeDasharray={circumference} strokeDashoffset={offset}
-            strokeLinecap="round" transform="rotate(-90 26 26)"
+            cx={26}
+            cy={26}
+            r={r}
+            fill="none"
+            stroke="#1a56db"
+            strokeWidth={4}
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+            strokeLinecap="round"
+            transform="rotate(-90 26 26)"
             style={{ transition: "stroke-dashoffset 0.6s ease" }}
           />
-          <text x={26} y={26} textAnchor="middle" dominantBaseline="central"
-            fill="#dae2fd" fontSize={12} fontWeight={700} fontFamily="'JetBrains Mono', monospace">
-            {score}
+          <text
+            x={26}
+            y={26}
+            textAnchor="middle"
+            dominantBaseline="central"
+            fill="#dae2fd"
+            fontSize={12}
+            fontWeight={700}
+            fontFamily="'JetBrains Mono', monospace"
+          >
+            {Math.round(safeScore)}
           </text>
         </svg>
         <div>
@@ -157,37 +237,35 @@ function DisciplineScoreCard({
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ── Compact Drawdown Card ────────────────────────────────────────────────
-
-function DrawdownCard({
-  drawdownPct,
-  hasMetrics,
-  isConnected,
-}: {
-  drawdownPct: string | number;
-  hasMetrics: boolean;
-  isConnected: boolean;
-}) {
-  return (
-    <div className="compact-metric-card">
+      <div className="my-3 border-t border-white/10" />
       <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-danger/10 flex-shrink-0">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-danger">
-            <polyline points="22 17 13.5 8.5 8.5 13.5 2 7"></polyline>
-            <polyline points="16 17 22 17 22 11"></polyline>
+        <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-danger/10">
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-danger"
+          >
+            <polyline points="22 17 13.5 8.5 8.5 13.5 2 7" />
+            <polyline points="16 17 22 17 22 11" />
           </svg>
         </div>
         <div>
           <div className="text-xs font-semibold text-text-primary tracking-wide">Max Drawdown</div>
           <span className="font-mono text-lg font-bold tracking-tight text-danger">
-            -{parseFloat(String(drawdownPct || "0")).toFixed(2)}%
+            -{drawdownValue.toFixed(2)}%
           </span>
           <div className="text-[10px] text-text-secondary uppercase tracking-widest">
-            {hasMetrics ? "Peak-to-Trough" : isConnected ? "Awaiting closed-position sync" : "No synced data"}
+            {hasMetrics
+              ? "Peak-to-Trough"
+              : isConnected
+                ? "Awaiting closed-position sync"
+                : "No synced data"}
           </div>
         </div>
       </div>
@@ -195,14 +273,13 @@ function DrawdownCard({
   );
 }
 
-// ── Main Dashboard ──────────────────────────────────────────────────────
+// Main dashboard
 
 export default function Dashboard() {
   const userId = DEFAULT_USER_ID;
 
   const [overview, setOverview] = useState<DashboardOverview | null>(null);
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
-  const [alerts, setAlerts] = useState<AlertData[]>([]);
   const [unreadAlertCount, setUnreadAlertCount] = useState(0);
   const [positions, setPositions] = useState<PositionData[]>([]);
   const [positionsSourceState, setPositionsSourceState] =
@@ -245,23 +322,12 @@ export default function Dashboard() {
         console.error("Metrics fetch failed:", await readErrorMessage(metricsRes));
       }
 
-      let alertsPayload: AlertData[] = [];
       let nextUnreadAlertCount = 0;
       if (alertsRes.ok) {
         const alertsJson = await alertsRes.json();
-        alertsPayload = (alertsJson.alerts as ApiAlert[]).map((alert, index) => ({
-          id: alert._id || `${alert.rule_id}-${alert.triggered_at}-${index}`,
-          rule_id: alert.rule_id,
-          rule_name: alert.rule_name,
-          severity: alert.severity,
-          title: alert.title,
-          message: alert.message,
-          triggered_at: alert.triggered_at,
-          is_read: alert.is_read,
-        }));
         nextUnreadAlertCount =
           alertsJson.unread_total ??
-          alertsPayload.filter((alert) => !alert.is_read).length;
+          ((alertsJson.alerts as ApiAlert[] | undefined) ?? []).filter((alert) => !alert.is_read).length;
       } else {
         console.error("Alerts fetch failed:", await readErrorMessage(alertsRes));
       }
@@ -287,7 +353,6 @@ export default function Dashboard() {
       startTransition(() => {
         setOverview(overviewPayload);
         setMetrics(metricsPayload);
-        setAlerts(alertsPayload);
         setUnreadAlertCount(nextUnreadAlertCount);
         setPositions(positionsPayload);
         setPositionsSourceState(nextPositionsSourceState);
@@ -300,7 +365,6 @@ export default function Dashboard() {
       startTransition(() => {
         setOverview(null);
         setMetrics(null);
-        setAlerts([]);
         setUnreadAlertCount(0);
         setPositions([]);
         setPositionsSourceState("error");
@@ -326,9 +390,22 @@ export default function Dashboard() {
   const drawdownPct =
     metrics?.max_drawdown?.value_pct ?? `${overview?.max_drawdown_pct ?? 0}`;
   const netPnlUsd = metrics?.net_pnl_usd ?? overview?.net_pnl_usd ?? 0;
+  const exchangePortfolioValues = (overview?.portfolio_value_by_exchange ?? []).reduce<Record<string, number>>(
+    (accumulator, row) => {
+      const exchangeId = String(row.exchange_id || "").trim().toLowerCase();
+      if (!exchangeId) {
+        return accumulator;
+      }
+      accumulator[exchangeId] = (accumulator[exchangeId] ?? 0) + toNumber(row.portfolio_value);
+      return accumulator;
+    },
+    {},
+  );
+  const binancePortfolioValue = exchangePortfolioValues.binance ?? 0;
+  const okxPortfolioValue = exchangePortfolioValues.okx ?? 0;
 
   const handleNewAlert = useCallback((newAlert: AlertData) => {
-    setAlerts((previousAlerts) => [newAlert, ...previousAlerts]);
+    void newAlert;
     setUnreadAlertCount((currentCount) => currentCount + 1);
   }, []);
 
@@ -445,7 +522,9 @@ export default function Dashboard() {
   const hasConfiguredConnection =
     overview?.has_configured_exchange_connection ??
     Boolean(overview?.exchange_connections?.some((connection) => connection.is_active));
-  const overviewWarnings = overview?.warnings ?? [];
+  const overviewWarnings = (overview?.warnings ?? []).filter(
+    (warning) => !isSuppressedDashboardWarning(warning),
+  );
   const spotWarnings = overviewWarnings.filter((warning) => /spot|pricing/i.test(warning));
   const exchangeBreakdown = metrics?.by_exchange ?? overview?.metrics_by_exchange ?? [];
   const activeExchangeCount =
@@ -457,7 +536,6 @@ export default function Dashboard() {
       header={
         <Navbar
           hasConfiguredExchangeConnection={hasConfiguredConnection}
-          totalPortfolioValue={overview?.total_portfolio_value ?? 0}
           lastRefreshAt={overview?.last_refresh_at ?? null}
           hasLiveExchangeConnection={overview?.has_live_exchange_connection ?? false}
           activeExchangeCount={activeExchangeCount}
@@ -493,30 +571,32 @@ export default function Dashboard() {
             </div>
           ) : null}
 
-          {/* ── Compact Metrics Strip ─── */}
+          {/* Compact metrics strip */}
           <div className="metrics-strip">
             <PortfolioCard
               exchanges={exchangeBreakdown}
               totalNetPnl={netPnlUsd}
               isConnected={hasConfiguredConnection}
             />
-            <DisciplineScoreCard
-              score={disciplineScore}
-              grade={disciplineGrade}
-              isLoading={isLoading}
-              hasMetrics={!!metrics}
+            <PortfolioValueCard
+              totalValue={overview?.total_portfolio_value ?? 0}
+              binanceValue={binancePortfolioValue}
+              okxValue={okxPortfolioValue}
               isConnected={hasConfiguredConnection}
             />
-            <DrawdownCard
+            <DisciplineDrawdownCard
+              score={disciplineScore}
+              grade={disciplineGrade}
               drawdownPct={drawdownPct}
+              isLoading={isLoading}
               hasMetrics={!!metrics}
               isConnected={hasConfiguredConnection}
             />
           </div>
 
-          {/* ── Main Content: Contagion (dominant) + Right Rail ─── */}
+          {/* Main content: contagion (dominant) + right rail */}
           <div className="dashboard-body">
-            {/* Contagion module — large primary workspace */}
+            {/* Contagion module - primary workspace */}
             <div className="dashboard-contagion">
               <PortfolioContagionMap
                 userId={userId}
@@ -524,27 +604,29 @@ export default function Dashboard() {
               />
             </div>
 
-            {/* Right rail — Open Positions + Alerts */}
+            {/* Right workspace - compact operational inventory */}
             <div className="dashboard-rail">
-              <OpenPositions
-                positions={positions}
-                isLoading={isPositionsLoading}
-                isConnected={hasConfiguredConnection}
-                sourceState={positionsSourceState}
-                statusMessage={positionsStatusMessage}
-                warnings={positionsWarnings}
-              />
-              <SpotAssets
-                assets={overview?.spot_assets ?? []}
-                totalSpotValue={overview?.spot_total_value ?? 0}
-                isLoading={isLoading}
-                isConnected={hasConfiguredConnection}
-                warnings={spotWarnings}
-              />
-              <AlertsPanel alerts={alerts} />
+              <div className="dashboard-operations">
+                <OpenPositions
+                  positions={positions}
+                  isLoading={isPositionsLoading}
+                  isConnected={hasConfiguredConnection}
+                  sourceState={positionsSourceState}
+                  statusMessage={positionsStatusMessage}
+                  warnings={positionsWarnings}
+                />
+                <SpotAssets
+                  assets={overview?.spot_assets ?? []}
+                  totalSpotValue={overview?.spot_total_value ?? 0}
+                  isLoading={isLoading}
+                  isConnected={hasConfiguredConnection}
+                  warnings={spotWarnings}
+                />
+              </div>
             </div>
           </div>
         </div>
     </AppShell>
   );
 }
+

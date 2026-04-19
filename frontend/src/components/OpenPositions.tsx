@@ -38,21 +38,21 @@ export function OpenPositions({
         : statusMessage || "No open futures positions found.";
 
   return (
-    <div className="glass-card rounded-2xl p-6 shadow-xl border border-white/5 relative z-10 transition-all hover:border-white/10 group">
-      <h3 className="text-lg font-semibold mb-5 text-white flex justify-between items-center">
+    <div className="glass-card group relative z-10 flex h-full min-h-[280px] flex-col rounded-2xl border border-white/5 p-3 shadow-xl transition-all hover:border-white/10">
+      <h3 className="mb-2 flex items-center justify-between text-sm font-semibold text-white">
         <span>Open Positions</span>
-        <span className="text-xs bg-primary/20 text-primary px-2.5 py-1 rounded-full font-medium border border-primary/30">
+        <span className="rounded-full border border-primary/30 bg-primary/20 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.14em] text-primary">
           {isLoading ? '...' : `${displayPositions.length} Active`}
         </span>
       </h3>
-      <div className="flex flex-col gap-3">
+      <div className="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto pr-1">
         {!isLoading && sourceState === "partial" && (statusMessage || partialWarnings.length > 0) ? (
-          <div className="rounded-xl border border-warning-accent/30 bg-warning-accent/10 px-4 py-3 text-sm text-warning-accent">
+          <div className="rounded-lg border border-warning-accent/30 bg-warning-accent/10 px-2.5 py-2 text-[11px] text-warning-accent">
             <div className="font-semibold tracking-wide text-white">
               {statusMessage || "Partial positions data loaded."}
             </div>
             {partialWarnings.length > 0 ? (
-              <div className="mt-2 flex flex-col gap-1 text-xs leading-5 text-warning-accent">
+              <div className="mt-1 flex flex-col gap-1 text-[10px] leading-4 text-warning-accent">
                 {partialWarnings.map((warning, index) => (
                   <div key={`${warning}-${index}`}>{warning}</div>
                 ))}
@@ -61,9 +61,9 @@ export function OpenPositions({
           </div>
         ) : null}
         {isLoading ? (
-          <div className="text-gray-500 text-sm animate-pulse text-center py-10">Fetching live positions...</div>
+          <div className="py-6 text-center text-xs text-gray-500 animate-pulse">Fetching live positions...</div>
         ) : displayPositions.length === 0 ? (
-          <div className="text-gray-500 text-sm text-center py-10 italic">{emptyStateMessage}</div>
+          <div className="py-6 text-center text-xs italic text-gray-500">{emptyStateMessage}</div>
         ) : (
           displayPositions.map((pos, i) => {
             const pnlValue = parseFloat(pos.unrealized_pnl || '0');
@@ -71,31 +71,32 @@ export function OpenPositions({
             const exchangeMeta = getExchangeMeta(pos.exchange_id);
 
             return (
-              <div key={`${pos.exchange_id ?? "unknown"}-${pos.symbol}-${pos.side}-${i}`} className="flex justify-between items-center bg-white/[0.03] hover:bg-white/[0.06] transition-colors p-4 rounded-xl border border-white/5 backdrop-blur-sm">
-                <div className="flex flex-col">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="font-bold text-sm tracking-wide text-white">{pos.symbol}</div>
+              <div
+                key={`${pos.exchange_id ?? "unknown"}-${pos.symbol}-${pos.side}-${i}`}
+                className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-2.5 py-2 backdrop-blur-sm transition-colors hover:bg-white/[0.06]"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1">
+                    <div className="truncate font-mono text-[13px] font-bold tracking-tight text-white">{pos.symbol}</div>
                     <span
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] ${exchangeMeta.badgeClassName}`}
+                      className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-[0.12em] ${exchangeMeta.badgeClassName}`}
                     >
-                      <span
-                        className={`h-1.5 w-1.5 rounded-full ${exchangeMeta.badgeDotClassName}`}
-                      />
+                      <span className={`h-1.5 w-1.5 rounded-full ${exchangeMeta.badgeDotClassName}`} />
                       {exchangeMeta.label}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 mt-1.5">
-                    <span className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ${pos.side.toLowerCase() === 'long' ? 'bg-success/20 text-success border border-success/30' : 'bg-danger/20 text-danger border border-danger/30'}`}>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em] ${pos.side.toLowerCase() === 'long' ? 'border border-success/30 bg-success/20 text-success' : 'border border-danger/30 bg-danger/20 text-danger'}`}>
                       {pos.side}
                     </span>
-                    <span className="text-[10px] font-mono bg-white/10 px-1.5 py-0.5 rounded text-gray-300 border border-white/10">{pos.leverage}x</span>
+                    <span className="rounded border border-white/10 bg-white/[0.08] px-1.5 py-0.5 font-mono text-[9px] text-gray-300">{pos.leverage}x</span>
                   </div>
                 </div>
-                <div className="flex flex-col items-end">
-                  <div className={`font-mono text-base font-bold tracking-tight ${isPositive ? 'text-success drop-shadow-[0_0_8px_rgba(16,185,129,0.4)]' : 'text-danger drop-shadow-[0_0_8px_rgba(239,68,68,0.4)]'}`}>
+                <div className="ml-2.5 flex flex-col items-end text-right">
+                  <div className={`font-mono text-[13px] font-bold tracking-tight ${isPositive ? 'text-success' : 'text-danger'}`}>
                     {isPositive ? '+' : ''}${Math.abs(pnlValue).toFixed(2)}
                   </div>
-                  <div className="text-[10px] text-gray-500 mt-1 uppercase tracking-wider font-semibold">Unrealized PnL</div>
+                  <div className="mt-0.5 text-[8px] font-semibold uppercase tracking-[0.16em] text-gray-500">UPnL</div>
                 </div>
               </div>
             );

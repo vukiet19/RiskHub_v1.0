@@ -24,6 +24,7 @@ from api.dashboard import router as dashboard_router
 from api.exchange_keys import router as exchange_keys_router
 from api.ws import router as ws_router
 from api.risk_analysis import router as risk_analysis_router
+from api.sbt_identity import router as sbt_identity_router
 
 # ── Logging ──────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -70,6 +71,7 @@ app.include_router(dashboard_router)    # /api/v1/dashboard/*
 app.include_router(exchange_keys_router)  # /api/v1/exchange-keys/*
 app.include_router(ws_router)           # ws://…/ws/alerts/{user_id}
 app.include_router(risk_analysis_router) # /api/v1/risk-analysis/*
+app.include_router(sbt_identity_router) # /api/v1/sbt-identity/*
 
 # ── Routes ───────────────────────────────────────────────────────────────
 
