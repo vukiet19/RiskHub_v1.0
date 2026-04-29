@@ -117,7 +117,7 @@ function getStatusTone(status: string) {
     case "ok":
       return "border-success/20 bg-success/10 text-success";
     case "rate_limited":
-      return "border-warning-accent/30 bg-warning-accent/10 text-warning-accent";
+      return "border-white/10 bg-white/5 text-text-secondary";
     case "error":
       return "border-danger/25 bg-danger/10 text-danger";
     default:
@@ -552,7 +552,7 @@ export function ManageConnectionsModal({
                     ))}
                   </select>
                   {selectedExchangeId === "binance" && environment === "testnet" ? (
-                    <span className="text-xs leading-5 text-warning-accent">
+                    <span className="text-xs leading-5 text-text-secondary">
                       Binance Spot Testnet is isolated from Binance mainnet balances.
                     </span>
                   ) : null}

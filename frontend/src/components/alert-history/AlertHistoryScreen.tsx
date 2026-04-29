@@ -450,12 +450,6 @@ export function AlertHistoryScreen() {
           </section>
         ) : null}
 
-        {payload?.warnings?.length ? (
-          <section className="rounded-2xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning">
-            {payload.warnings[0]}
-          </section>
-        ) : null}
-
         {showNoAlertsYet ? (
           <section className="rounded-2xl border border-white/8 bg-surface-high/55 px-4 py-10 text-center text-sm text-text-secondary">
             No archived alerts yet.

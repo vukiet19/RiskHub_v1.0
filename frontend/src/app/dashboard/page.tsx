@@ -57,12 +57,6 @@ interface DashboardOverview {
   warnings?: string[];
 }
 
-interface DashboardRefreshResponse {
-  status: string;
-  warnings: string[];
-  engine_status: string;
-}
-
 type PositionsSourceState =
   | "live"
   | "partial"
@@ -75,14 +69,6 @@ interface LivePositionsResponse {
   source_state?: PositionsSourceState;
   message?: string | null;
   warnings?: string[];
-}
-
-const SUPPRESSED_DASHBOARD_WARNING_PATTERNS = [
-  /Binance Demo spot balances are simulated and isolated from Binance mainnet accounts/i,
-];
-
-function isSuppressedDashboardWarning(warning: string): boolean {
-  return SUPPRESSED_DASHBOARD_WARNING_PATTERNS.some((pattern) => pattern.test(warning));
 }
 
 interface ApiAlert {
@@ -285,7 +271,6 @@ export default function Dashboard() {
   const [positionsSourceState, setPositionsSourceState] =
     useState<PositionsSourceState>("live");
   const [positionsStatusMessage, setPositionsStatusMessage] = useState<string | null>(null);
-  const [positionsWarnings, setPositionsWarnings] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isPositionsLoading, setIsPositionsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -335,7 +320,6 @@ export default function Dashboard() {
       let positionsPayload: PositionData[] = [];
       let nextPositionsSourceState: PositionsSourceState = "live";
       let nextPositionsStatusMessage: string | null = null;
-      let nextPositionsWarnings: string[] = [];
       if (positionsRes.ok) {
         const positionsJson = (await positionsRes.json()) as LivePositionsResponse;
         positionsPayload = Array.isArray(positionsJson.positions)
@@ -343,9 +327,6 @@ export default function Dashboard() {
           : [];
         nextPositionsSourceState = positionsJson.source_state ?? "live";
         nextPositionsStatusMessage = positionsJson.message ?? null;
-        nextPositionsWarnings = Array.isArray(positionsJson.warnings)
-          ? positionsJson.warnings.filter((warning): warning is string => typeof warning === "string" && warning.length > 0)
-          : [];
       } else {
         console.error("Positions fetch failed:", await readErrorMessage(positionsRes));
       }
@@ -357,7 +338,6 @@ export default function Dashboard() {
         setPositions(positionsPayload);
         setPositionsSourceState(nextPositionsSourceState);
         setPositionsStatusMessage(nextPositionsStatusMessage);
-        setPositionsWarnings(nextPositionsWarnings);
       });
     } catch (error) {
       console.error("Dashboard data fetch error:", error);
@@ -369,7 +349,6 @@ export default function Dashboard() {
         setPositions([]);
         setPositionsSourceState("error");
         setPositionsStatusMessage("Failed to load dashboard data.");
-        setPositionsWarnings([]);
       });
     } finally {
       if (showSkeleton) {
@@ -426,14 +405,8 @@ export default function Dashboard() {
         throw new Error(await readErrorMessage(response));
       }
 
-      const payload = (await response.json()) as DashboardRefreshResponse;
-      if (payload.status === "partial" && payload.warnings.length > 0) {
-        toast.message("Dashboard refreshed with warnings.", {
-          description: payload.warnings[0],
-        });
-      } else {
-        toast.success("Dashboard refreshed.");
-      }
+      await response.json().catch(() => null);
+      toast.success("Dashboard refreshed.");
 
       await loadDashboardData();
       setContagionRefreshToken((currentToken) => currentToken + 1);
@@ -482,27 +455,15 @@ export default function Dashboard() {
           throw new Error(await readErrorMessage(refreshResponse));
         }
 
-        const refreshPayload = (await refreshResponse.json()) as DashboardRefreshResponse;
-
-        toast.success(
-          refreshPayload.status === "partial"
-            ? `${exchangeMeta.label} connection saved. Portfolio refreshed with warnings.`
-            : `${exchangeMeta.label} connection saved.`,
-        );
-
-        if (refreshPayload.warnings.length > 0) {
-          toast.message("Refresh details", {
-            description: refreshPayload.warnings[0],
-          });
-        }
+        await refreshResponse.json().catch(() => null);
+        toast.success(`${exchangeMeta.label} connection saved.`);
       } catch (refreshError) {
         console.error("Initial dashboard refresh failed after connection save:", refreshError);
-        toast.message(`${exchangeMeta.label} connection saved. Initial refresh needs attention.`, {
-          description:
-            refreshError instanceof Error
-              ? refreshError.message
-              : "The connection was saved, but the first refresh failed.",
-        });
+        toast.error(
+          refreshError instanceof Error
+            ? refreshError.message
+            : "The connection was saved, but the first refresh failed.",
+        );
       }
 
       await loadDashboardData();
@@ -522,10 +483,6 @@ export default function Dashboard() {
   const hasConfiguredConnection =
     overview?.has_configured_exchange_connection ??
     Boolean(overview?.exchange_connections?.some((connection) => connection.is_active));
-  const overviewWarnings = (overview?.warnings ?? []).filter(
-    (warning) => !isSuppressedDashboardWarning(warning),
-  );
-  const spotWarnings = overviewWarnings.filter((warning) => /spot|pricing/i.test(warning));
   const exchangeBreakdown = metrics?.by_exchange ?? overview?.metrics_by_exchange ?? [];
   const activeExchangeCount =
     overview?.exchange_connections?.filter((connection) => connection.is_active).length ?? 0;
@@ -540,7 +497,7 @@ export default function Dashboard() {
           hasLiveExchangeConnection={overview?.has_live_exchange_connection ?? false}
           activeExchangeCount={activeExchangeCount}
           configuredExchangeCount={configuredExchangeCount}
-          statusMessage={overviewWarnings[0] ?? null}
+          statusMessage={null}
           unreadAlertCount={unreadAlertCount}
           isRefreshing={isRefreshing}
           onRefresh={handleRefresh}
@@ -565,12 +522,6 @@ export default function Dashboard() {
         onRefreshData={handleRefresh}
       />
       <div className="relative z-0 flex-1 overflow-y-auto p-4 md:p-5 lg:p-6">
-          {overviewWarnings.length > 0 ? (
-            <div className="mb-4 rounded-md border border-warning-accent/30 bg-warning-accent/10 px-4 py-3 text-sm text-warning-accent">
-              {overviewWarnings[0]}
-            </div>
-          ) : null}
-
           {/* Compact metrics strip */}
           <div className="metrics-strip">
             <PortfolioCard
@@ -613,14 +564,12 @@ export default function Dashboard() {
                   isConnected={hasConfiguredConnection}
                   sourceState={positionsSourceState}
                   statusMessage={positionsStatusMessage}
-                  warnings={positionsWarnings}
                 />
                 <SpotAssets
                   assets={overview?.spot_assets ?? []}
                   totalSpotValue={overview?.spot_total_value ?? 0}
                   isLoading={isLoading}
                   isConnected={hasConfiguredConnection}
-                  warnings={spotWarnings}
                 />
               </div>
             </div>

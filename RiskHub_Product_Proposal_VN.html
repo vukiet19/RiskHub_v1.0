@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RiskHub Product Proposal</title>
+  <style>
+:root {
+  --bg: #f6f7fb;
+  --paper: #ffffff;
+  --text: #172033;
+  --muted: #4d5b78;
+  --accent: #123a7a;
+  --line: #d9dfec;
+}
+@page {
+  size: A4;
+  margin: 16mm 14mm 18mm 14mm;
+}
+html { background: var(--bg); }
+body {
+  margin: 0;
+  font-family: 'Segoe UI', 'Noto Sans', Arial, sans-serif;
+  color: var(--text);
+  background: var(--paper);
+  font-size: 12.5pt;
+  line-height: 1.58;
+}
+main {
+  max-width: 190mm;
+  margin: 0 auto;
+  padding: 6mm 0;
+}
+h1, h2, h3, h4, h5, h6 {
+  color: var(--accent);
+  margin: 0 0 10px;
+  line-height: 1.22;
+  page-break-after: avoid;
+}
+h1 {
+  font-size: 24pt;
+  margin-top: 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--line);
+}
+h2 { font-size: 17pt; margin-top: 22px; }
+h3 { font-size: 14pt; margin-top: 16px; }
+p, li, blockquote { orphans: 3; widows: 3; }
+p { margin: 0 0 10px; }
+ul, ol { margin: 0 0 10px 22px; padding: 0; }
+li { margin: 0 0 6px; }
+blockquote {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-left: 4px solid #2a63bf;
+  background: #f2f6ff;
+  color: var(--muted);
+}
+strong { color: #0f1f3d; }
+code {
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 0.92em;
+  background: #eef2fb;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+a { color: #144a96; text-decoration: none; }
+</style>
+</head>
+<body>
+  <main>
+<h1>RiskHub Product Proposal</h1>
+<blockquote>
+<p>Tài liệu này được viết dựa trên trạng thái sản phẩm hiện có trong codebase ngày 19/04/2026. Nội dung ưu tiên các tính năng đã được hiện thực thay vì mô tả theo định hướng lý tưởng trong PRD.</p>
+</blockquote>
+<h2>1. Tóm tắt đề xuất</h2>
+<p><strong>RiskHub</strong> là nền tảng <strong>read-only risk intelligence</strong> dành cho trader crypto hoạt động trên nhiều sàn tập trung. Thay vì giúp người dùng giao dịch nhiều hơn, RiskHub giúp họ <strong>thấy rõ rủi ro hơn, kỷ luật hơn và ra quyết định tỉnh táo hơn</strong>.</p>
+<p>Sản phẩm hiện tại tập trung vào 5 năng lực cốt lõi:</p>
+<ul>
+<li>Kết nối dữ liệu giao dịch đa sàn theo mô hình chỉ đọc</li>
+<li>Tổng hợp portfolio live theo từng sàn và toàn bộ danh mục</li>
+<li>Phát hiện hành vi giao dịch rủi ro bằng Behavioral Quant Engine</li>
+<li>Cảnh báo rủi ro theo thời gian thực và lưu vết để truy xuất</li>
+<li>Xây dựng hồ sơ Risk Identity phiên bản hóa, sẵn sàng cho lớp xác thực Web3/SBT trong giai đoạn tiếp theo</li>
+</ul>
+<p><strong>Định vị đề xuất:</strong> RiskHub không phải là một công cụ trade execution hay một ví lưu ký. Đây là <strong>lớp bảo vệ rủi ro, lớp phân tích hành vi và lớp uy tín giao dịch</strong> dành cho nhà đầu tư crypto hiện đại.</p>
+<h2>2. Bài toán thị trường</h2>
+<p>Trader crypto cá nhân đang gặp ba vấn đề lớn:</p>
+<ol>
+<li><strong>Rủi ro bị phân mảnh giữa nhiều sàn</strong></li>
+</ol>
+<p>Spot, futures, PnL chưa chốt, đòn bẩy và vị thế mở thường nằm rải rác trên nhiều exchange. Người dùng rất khó nhìn ra tổng thể rủi ro thực.</p>
+<ol>
+<li><strong>Hành vi giao dịch cảm tính không được cảnh báo đúng lúc</strong></li>
+</ol>
+<p>Các pattern như revenge trading, overtrading, dùng đòn bẩy quá mức hoặc tập trung quá nhiều vào một tài sản thường chỉ được nhận ra sau khi tài khoản đã chịu drawdown.</p>
+<ol>
+<li><strong>Thiếu hồ sơ uy tín giao dịch có thể kiểm chứng</strong></li>
+</ol>
+<p>Trong copy trading và signal market, phần lớn “thành tích” được chia sẻ bằng ảnh chụp màn hình hoặc số liệu chọn lọc. Người theo dõi gần như không có công cụ để xác minh kỷ luật và mức độ rủi ro thật sự của một trader.</p>
+<h2>3. Giải pháp RiskHub</h2>
+<p>RiskHub giải quyết bài toán trên bằng một nền tảng phân tích rủi ro end-to-end:</p>
+<ul>
+<li>Kết nối tài khoản exchange bằng API <strong>read-only</strong></li>
+<li>Đồng bộ lịch sử giao dịch và ảnh chụp live exposure</li>
+<li>Tính toán các chỉ số hành vi và chỉ số rủi ro trên backend</li>
+<li>Đẩy cảnh báo realtime đến giao diện người dùng</li>
+<li>Trực quan hóa contagion risk giữa các tài sản trong danh mục</li>
+<li>Tạo hồ sơ Risk Identity có lịch sử phiên bản để phục vụ chia sẻ, đối chiếu và mở rộng sang mô hình xác thực Web3</li>
+</ul>
+<h2>4. Những gì sản phẩm hiện tại đã có</h2>
+<h3>4.1. Kết nối đa sàn theo mô hình read-only</h3>
+<p>RiskHub hiện đã hỗ trợ:</p>
+<ul>
+<li><strong>Binance</strong> và <strong>OKX</strong></li>
+<li>Môi trường <strong>mainnet</strong>, <strong>testnet</strong>, và <strong>Binance demo</strong></li>
+<li>Quản lý nhiều kết nối theo từng sàn, môi trường và market type</li>
+<li>Lưu trữ credential theo cơ chế <strong>AES-256-GCM ở tầng ứng dụng</strong></li>
+<li>Xác thực kết nối trước khi lưu</li>
+<li>Theo dõi trạng thái đồng bộ, lỗi sync và thời điểm sync gần nhất</li>
+</ul>
+<p>Giá trị mang lại:</p>
+<ul>
+<li>Người dùng không cần chuyển tài sản hay cấp quyền giao dịch</li>
+<li>Hệ thống chỉ đọc dữ liệu tài khoản, không gọi các hành vi trade, withdraw hay transfer</li>
+<li>Tạo niềm tin cao hơn cho người dùng retail so với các mô hình custody hoặc semi-custody</li>
+</ul>
+<h3>4.2. Dashboard tổng hợp danh mục live</h3>
+<p>Màn hình <code>/dashboard</code> hiện đã có khả năng:</p>
+<ul>
+<li>Tổng hợp <strong>Total Portfolio Value</strong> trên toàn bộ kết nối</li>
+<li>Hiển thị giá trị danh mục theo từng sàn</li>
+<li>Hiển thị <strong>spot assets</strong> với định giá USD</li>
+<li>Hiển thị <strong>open futures positions</strong>, unrealized PnL, entry/mark price, leverage</li>
+<li>Hiển thị <strong>discipline score</strong>, <strong>drawdown</strong>, <strong>net PnL</strong></li>
+<li>Hiển thị mức độ <strong>freshness</strong> của dữ liệu và các warning khi dữ liệu chưa đầy đủ</li>
+<li>Làm mới dashboard bằng dữ liệu lấy trực tiếp từ stored exchange keys</li>
+<li>Nhúng <strong>Portfolio Contagion Map</strong> vào trải nghiệm tổng quan</li>
+</ul>
+<p>Giá trị mang lại:</p>
+<ul>
+<li>Người dùng có một “single risk view” thay vì phải mở nhiều app/sàn cùng lúc</li>
+<li>RiskHub đóng vai trò như một command center, không phải chỉ là một bảng số liệu rời rạc</li>
+</ul>
+<h3>4.3. Behavioral Quant Engine và kỷ luật giao dịch</h3>
+<p>Đây là phần có giá trị khác biệt mạnh nhất của RiskHub trong codebase hiện tại.</p>
+<p>Backend hiện đang:</p>
+<ul>
+<li>Đọc lịch sử giao dịch trong cửa sổ 30 ngày</li>
+<li>Tính các chỉ số như:</li>
+<li>Max drawdown</li>
+<li>Win rate</li>
+<li>Average / median / max leverage</li>
+<li>Profit factor</li>
+<li>Sharpe ratio</li>
+<li>Total volume</li>
+<li>Net PnL</li>
+<li>Discipline score và discipline grade</li>
+<li>Đánh giá 5 luật hành vi MVP:</li>
+<li><strong>RQ-001:</strong> Revenge Trading</li>
+<li><strong>RQ-002:</strong> Overtrading</li>
+<li><strong>RQ-003:</strong> Excessive Leverage</li>
+<li><strong>RQ-004:</strong> Max Drawdown Breach</li>
+<li><strong>RQ-005:</strong> Concentration Risk</li>
+<li>Ghi snapshot vào <code>risk_metrics</code></li>
+<li>Ghi sự kiện cảnh báo vào <code>alerts_log</code></li>
+</ul>
+<p>Giá trị mang lại:</p>
+<ul>
+<li>RiskHub không chỉ mô tả trạng thái tài khoản mà còn <strong>đánh giá hành vi ra quyết định</strong></li>
+<li>Đây là nền tảng để sản phẩm bước sang lớp “behavioral identity” thay vì chỉ dừng ở “portfolio dashboard”</li>
+</ul>
+<h3>4.4. Alerting realtime và lịch sử cảnh báo có thể truy vết</h3>
+<p>Sản phẩm hiện có:</p>
+<ul>
+<li>WebSocket push alert theo từng user</li>
+<li>Recent alerts ngay trên dashboard</li>
+<li>Màn hình <code>/alert-history</code> chuyên dụng</li>
+<li>Bộ lọc theo:</li>
+<li>ngày</li>
+<li>severity</li>
+<li>category</li>
+<li>rule id</li>
+<li>read/unread</li>
+<li>exchange</li>
+<li>search keyword</li>
+<li>Đánh dấu đã đọc theo từng alert hoặc toàn bộ tập lọc</li>
+<li>Truy xuất <strong>related trades</strong> để xem bằng chứng giao dịch gắn với alert</li>
+</ul>
+<p>Giá trị mang lại:</p>
+<ul>
+<li>Biến alert từ một notification đơn lẻ thành một hệ thống audit trail</li>
+<li>Người dùng có thể quay lại xem tại sao cảnh báo được kích hoạt, chứ không chỉ nhận cảnh báo rồi bỏ qua</li>
+</ul>
+<h3>4.5. Advanced Risk Analysis</h3>
+<p>Màn hình <code>/risk-analysis</code> hiện đã vượt mức dashboard thông thường và đi vào lớp phân tích rủi ro chuyên sâu:</p>
+<ul>
+<li>Lọc theo <strong>scope</strong>: all, Binance, OKX</li>
+<li>Lọc theo <strong>mode</strong>: all, spot, future</li>
+<li>Tính <strong>risk score tổng</strong></li>
+<li>Tách risk theo 4 hợp phần:</li>
+<li>concentration</li>
+<li>leverage</li>
+<li>drawdown</li>
+<li>contagion</li>
+<li>Liệt kê <strong>top risk contributors</strong></li>
+<li>Phân tích từng vị thế có rủi ro cao</li>
+<li>Tạo <strong>attention items</strong> dưới dạng khuyến nghị hành động</li>
+<li>Chạy <strong>stress scenarios</strong> như:</li>
+<li>BTC -20% shock</li>
+<li>ETH -20% shock</li>
+<li>Broad market -15% selloff</li>
+<li>Dependency tightening / contagion stress</li>
+</ul>
+<p>Giá trị mang lại:</p>
+<ul>
+<li>Đây là lớp từ “monitoring” đi sang “decision support”</li>
+<li>RiskHub không chỉ cho biết rủi ro đang cao, mà còn cho biết <strong>rủi ro đến từ đâu</strong> và <strong>nếu thị trường xấu đi thì tác động ước tính là gì</strong></li>
+</ul>
+<h3>4.6. Contagion Graph cho danh mục tài sản</h3>
+<p>RiskHub đã có một correlation / contagion engine tương đối hoàn chỉnh:</p>
+<ul>
+<li>Dùng rolling correlation window 30 ngày</li>
+<li>So sánh với cửa sổ lùi 7 ngày để đo mức siết/lỏng dependency</li>
+<li>Tính <strong>systemic score</strong> cho từng node tài sản</li>
+<li>Tạo edge với band high / moderate / low</li>
+<li>Phân loại market regime:</li>
+<li>calm</li>
+<li>elevated</li>
+<li>stress</li>
+<li>Trả về các thành phần:</li>
+<li>largest cluster</li>
+<li>systemic asset</li>
+<li>top risk pair</li>
+<li>network density</li>
+<li>contagion insight</li>
+</ul>
+<p>Giá trị mang lại:</p>
+<ul>
+<li>RiskHub nhìn rủi ro theo cấu trúc mạng lưới tài sản, không chỉ theo số dư từng coin</li>
+<li>Đây là một điểm khác biệt rất mạnh nếu pitch ở bối cảnh hackathon, Web3 analytics hoặc copy trading infrastructure</li>
+</ul>
+<h3>4.7. Risk Identity và SBT readiness layer</h3>
+<p>Màn hình <code>/sbt-identity</code> hiện cung cấp một lớp identity data rất đáng giá:</p>
+<ul>
+<li>Tạo <strong>current risk profile</strong> từ snapshot live hiện tại</li>
+<li>Sinh các thuộc tính như:</li>
+<li>identity tier</li>
+<li>risk level</li>
+<li>discipline grade</li>
+<li>leverage snapshot</li>
+<li>top asset concentration</li>
+<li>behavior flags summary</li>
+<li>eligibility / blockers</li>
+<li>Lưu <strong>saved profile</strong> có version</li>
+<li>Xem lịch sử profile</li>
+<li>So sánh profile đã lưu với snapshot mới nhất</li>
+<li>Chọn một phiên bản profile làm nguồn cho identity issuance</li>
+<li><strong>Issue Demo Identity</strong> từ dữ liệu risk profile</li>
+</ul>
+<p>Lưu ý quan trọng về trạng thái hiện tại:</p>
+<ul>
+<li>Flow identity hiện tại là <strong>demo issuance ở local state</strong></li>
+<li>Codebase hiện <strong>chưa thể hiện một flow mint SBT on-chain production-ready</strong></li>
+<li>Tuy nhiên, lớp dữ liệu hồ sơ, versioning và eligibility đã đủ tốt để làm nền cho bước tích hợp smart contract trong giai đoạn tiếp theo</li>
+</ul>
+<h2>5. Khách hàng mục tiêu</h2>
+<h3>5.1. Active retail trader</h3>
+<p>Đây là nhóm phù hợp nhất với trạng thái sản phẩm hiện tại:</p>
+<ul>
+<li>Giao dịch trên 2-5 sàn</li>
+<li>Dùng cả spot và futures</li>
+<li>Muốn một công cụ nhìn rủi ro tổng hợp nhưng không muốn giao quyền trade</li>
+<li>Có nhu cầu nâng cao kỷ luật và giảm drawdown</li>
+</ul>
+<h3>5.2. Signal provider / copy-trade leader</h3>
+<p>Nhóm này đặc biệt phù hợp với lớp identity:</p>
+<ul>
+<li>Có nhu cầu chứng minh kỷ luật giao dịch</li>
+<li>Muốn chia sẻ hồ sơ hiệu suất minh bạch hơn ảnh chụp PnL</li>
+<li>Có thể dùng RiskHub như lớp “trust infrastructure” để tăng uy tín</li>
+</ul>
+<h3>5.3. Copy-trade follower / community analyst</h3>
+<p>Dù chưa là flow hoàn chỉnh trong product hiện tại, đây là hướng mở rộng rất hợp lý:</p>
+<ul>
+<li>Kiểm tra hồ sơ risk của trader trước khi theo lệnh</li>
+<li>Giảm bất cân xứng thông tin trong thị trường signal/copy trade</li>
+</ul>
+<h2>6. Lợi thế cạnh tranh</h2>
+<p>RiskHub có 5 lợi thế rõ ràng:</p>
+<ol>
+<li><strong>Read-only by design</strong></li>
+</ol>
+<p>Không custody, không trade execution, không withdrawal, giảm mạnh rào cản niềm tin.</p>
+<ol>
+<li><strong>Tập trung vào hành vi chứ không chỉ số dư</strong></li>
+</ol>
+<p>Nhiều dashboard crypto chỉ hiển thị holdings; RiskHub đi xa hơn bằng việc lượng hóa discipline và bad trading patterns.</p>
+<ol>
+<li><strong>Risk intelligence nhiều lớp</strong></li>
+</ol>
+<p>Từ dashboard live, alerting, lịch sử cảnh báo, stress test cho đến contagion graph.</p>
+<ol>
+<li><strong>Identity layer gắn với dữ liệu thực</strong></li>
+</ol>
+<p>Phiên bản hiện tại đã có profile snapshot, history và compare flow, đủ để mở rộng sang verifiable credential.</p>
+<ol>
+<li><strong>Phù hợp với thị trường copy-trade đầy nhiễu</strong></li>
+</ol>
+<p>Nếu phát triển tiếp đúng hướng, RiskHub có thể trở thành lớp xác thực uy tín cho trader thay vì chỉ là công cụ nội bộ.</p>
+<h2>7. Mô hình kinh doanh đề xuất</h2>
+<p>Dựa trên chức năng hiện tại, RiskHub có thể theo mô hình:</p>
+<ul>
+<li><strong>Freemium cho retail trader</strong></li>
+</ul>
+<p>Dashboard cơ bản, số lượng kết nối giới hạn, cảnh báo cơ bản.</p>
+<ul>
+<li><strong>Pro subscription</strong></li>
+</ul>
+<p>Risk analysis nâng cao, stress testing, alert history đầy đủ, profile versioning, identity sharing.</p>
+<ul>
+<li><strong>B2B / white-label</strong></li>
+</ul>
+<p>Cung cấp risk layer cho cộng đồng copy trade, quỹ nhỏ, desk OTC, hoặc sàn muốn thêm lớp quản trị rủi ro.</p>
+<ul>
+<li><strong>Identity verification services</strong></li>
+</ul>
+<p>Thu phí cho lớp profile verification, trust badge hoặc on-chain credential issuance trong tương lai.</p>
+<h2>8. Độ tin cậy triển khai</h2>
+<p>Sản phẩm hiện tại không chỉ là slide ý tưởng. Nó đã có nền tảng kỹ thuật rõ ràng:</p>
+<ul>
+<li><strong>Frontend:</strong> Next.js 14, React 18, TypeScript, Tailwind</li>
+<li><strong>Backend:</strong> FastAPI, WebSocket, Pandas</li>
+<li><strong>Data layer:</strong> MongoDB qua Motor, Pydantic models</li>
+<li><strong>Exchange integration:</strong> CCXT</li>
+<li><strong>Security:</strong> Mã hóa credential bằng AES-256-GCM ở tầng ứng dụng</li>
+</ul>
+<p>Các module chính đã xuất hiện thành route và màn hình thực tế:</p>
+<ul>
+<li><code>/dashboard</code></li>
+<li><code>/risk-analysis</code></li>
+<li><code>/alert-history</code></li>
+<li><code>/sbt-identity</code></li>
+<li>API cho exchange keys, dashboard, sync, risk analysis, identity, engine và websocket alerts</li>
+</ul>
+<h2>9. Trạng thái sản phẩm hiện tại</h2>
+<h3>9.1. Đã có thể demo tốt</h3>
+<ul>
+<li>Kết nối Binance và OKX</li>
+<li>Tải live balances, spot assets, open positions</li>
+<li>Tổng hợp dashboard đa sàn</li>
+<li>Tính toán discipline score và quant metrics</li>
+<li>Sinh alert và xem lịch sử alert</li>
+<li>Phân tích contagion và risk decomposition</li>
+<li>Lưu risk profile theo version</li>
+<li>Issue demo identity từ risk profile</li>
+</ul>
+<h3>9.2. Cần hoàn thiện để đi production / gọi vốn mạnh hơn</h3>
+<ul>
+<li>User authentication hoàn chỉnh thay cho default user context</li>
+<li>Background scheduling cho sync và quant engine</li>
+<li>Notification đa kênh ngoài WebSocket</li>
+<li>Smart contract minting và wallet signing flow thực</li>
+<li>Multi-user governance, team account, audit log mức tổ chức</li>
+<li>Mở rộng thêm exchange ngoài Binance và OKX</li>
+</ul>
+<h2>10. Roadmap đề xuất</h2>
+<h3>Phase 1: Hoàn thiện MVP production</h3>
+<ul>
+<li>Hoàn thiện auth và user onboarding</li>
+<li>Tự động hóa lịch sync / engine</li>
+<li>Tối ưu data freshness và quan sát lỗi</li>
+<li>Chuẩn hóa report / export cho người dùng</li>
+</ul>
+<h3>Phase 2: Web3 identity thật sự</h3>
+<ul>
+<li>Tích hợp wallet connect / SIWE</li>
+<li>Mint SBT on-chain</li>
+<li>Cơ chế revocation / refresh / proof update</li>
+<li>Public verification page cho trader profile</li>
+</ul>
+<h3>Phase 3: B2B trust infrastructure</h3>
+<ul>
+<li>API cho copy-trade platforms</li>
+<li>Shared risk dashboards cho cộng đồng và desk</li>
+<li>Team-level risk policies</li>
+<li>Reputation graph cho trader / leader / follower</li>
+</ul>
+<h2>11. Kết luận đề xuất</h2>
+<p>RiskHub có vị thế tốt để trở thành một nền tảng <strong>risk operating system cho trader crypto</strong>.</p>
+<p>Điểm mạnh lớn nhất của sản phẩm không nằm ở việc “gom số dư từ nhiều sàn”, mà nằm ở việc kết hợp được ba lớp giá trị trong cùng một hệ thống:</p>
+<ul>
+<li><strong>Live portfolio visibility</strong></li>
+<li><strong>Behavioral risk intelligence</strong></li>
+<li><strong>Identity and trust layer</strong></li>
+</ul>
+<p>Trong trạng thái hiện tại, RiskHub đã đủ mạnh để thuyết phục ở góc nhìn hackathon, prototype chiến lược, hoặc pre-seed product concept. Nếu đội ngũ tiếp tục hoàn thiện auth, automation và on-chain identity flow, sản phẩm có tiềm năng đi xa hơn thành một hạ tầng trust layer cho copy trading và social trading trong Web3.</p>
+  </main>
+</body>
+</html>

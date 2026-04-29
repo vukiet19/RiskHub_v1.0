@@ -121,6 +121,39 @@ def _mode_includes_futures(mode: DisplayMode) -> bool:
     return mode in {"all", "future"}
 
 
+def _dedupe_warnings(warnings: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for warning in warnings:
+        cleaned = str(warning or "").strip()
+        if not cleaned or cleaned in seen:
+            continue
+        seen.add(cleaned)
+        deduped.append(cleaned)
+    return deduped
+
+
+def _short_error_message(exc: Exception) -> str:
+    message = re.sub(r"\s+", " ", str(exc or "").strip())
+    if not message:
+        message = type(exc).__name__
+    if len(message) > 180:
+        return f"{message[:177]}..."
+    return message
+
+
+def _credential_label(credential: dict[str, Any]) -> str:
+    return str(
+        credential.get("label")
+        or credential.get("exchange_id")
+        or "exchange"
+    )
+
+
+def _live_fetch_warning(kind: str, credential: dict[str, Any], exc: Exception) -> str:
+    return f"{kind} are currently unavailable for {_credential_label(credential)}: {_short_error_message(exc)}"
+
+
 def _merge_holdings(*sources: dict[str, float]) -> dict[str, float]:
     merged: dict[str, float] = {}
     for source in sources:
@@ -256,12 +289,20 @@ async def _load_live_holdings_snapshot(
     if not credentials:
         return {
             "holdings": {},
-            "warnings": warnings,
+            "spot_holdings": {},
+            "futures_holdings": {},
+            "warnings": _dedupe_warnings(warnings),
             "has_configured_connection": context["has_configured_connection"],
+            "futures_connections_checked": 0,
+            "futures_fetch_errors": 0,
+            "futures_positions_seen": 0,
         }
 
     spot_holdings: dict[str, float] = {}
     futures_holdings: dict[str, float] = {}
+    futures_connections_checked = 0
+    futures_fetch_errors = 0
+    futures_positions_seen = 0
 
     for credential in credentials:
         exchange_id = credential["exchange_id"]
@@ -307,6 +348,7 @@ async def _load_live_holdings_snapshot(
                     )
 
         if _mode_includes_futures(mode) and market_type in {"futures", "mixed"}:
+            futures_connections_checked += 1
             try:
                 positions = await fetch_open_positions(
                     exchange_id=exchange_id,
@@ -315,6 +357,7 @@ async def _load_live_holdings_snapshot(
                     passphrase=passphrase,
                     environment=environment,
                 )
+                futures_positions_seen += len(positions)
                 for position in positions:
                     base_asset = _extract_base_asset(position.get("symbol", ""))
                     notional_value = abs(
@@ -333,10 +376,9 @@ async def _load_live_holdings_snapshot(
                         continue
                     futures_holdings[base_asset] = futures_holdings.get(base_asset, 0.0) + round(notional_value, 2)
             except Exception as e:
+                futures_fetch_errors += 1
                 logger.warning("Failed to fetch live futures positions for %s: %s", exchange_id, e)
-                warnings.append(
-                    f"Futures positions are currently unavailable for {credential.get('label') or exchange_id}."
-                )
+                warnings.append(_live_fetch_warning("Futures positions", credential, e))
 
     if mode == "spot":
         holdings = _merge_holdings(spot_holdings)
@@ -349,8 +391,11 @@ async def _load_live_holdings_snapshot(
         "holdings": holdings,
         "spot_holdings": _merge_holdings(spot_holdings),
         "futures_holdings": _merge_holdings(futures_holdings),
-        "warnings": warnings,
+        "warnings": _dedupe_warnings(warnings),
         "has_configured_connection": context["has_configured_connection"],
+        "futures_connections_checked": futures_connections_checked,
+        "futures_fetch_errors": futures_fetch_errors,
+        "futures_positions_seen": futures_positions_seen,
     }
 
 
@@ -371,17 +416,23 @@ async def _load_live_positions_snapshot(
     if mode == "spot":
         return {
             "positions": [],
-            "warnings": warnings,
+            "warnings": _dedupe_warnings(warnings),
             "has_configured_connection": context["has_configured_connection"],
+            "futures_connections_checked": 0,
+            "futures_fetch_errors": 0,
         }
     if not credentials:
         return {
             "positions": [],
-            "warnings": warnings,
+            "warnings": _dedupe_warnings(warnings),
             "has_configured_connection": context["has_configured_connection"],
+            "futures_connections_checked": 0,
+            "futures_fetch_errors": 0,
         }
 
     positions: list[dict[str, Any]] = []
+    futures_connections_checked = 0
+    futures_fetch_errors = 0
 
     for credential in credentials:
         exchange_id = credential["exchange_id"]
@@ -394,6 +445,7 @@ async def _load_live_positions_snapshot(
         if market_type == "spot":
             continue
 
+        futures_connections_checked += 1
         try:
             exchange_positions = await fetch_open_positions(
                 exchange_id=exchange_id,
@@ -407,10 +459,9 @@ async def _load_live_positions_snapshot(
                 for position in exchange_positions
             )
         except Exception as e:
+            futures_fetch_errors += 1
             logger.warning("Failed to fetch live open positions for %s: %s", exchange_id, e)
-            warnings.append(
-                f"Live positions are currently unavailable for {credential.get('label') or exchange_id}."
-            )
+            warnings.append(_live_fetch_warning("Live futures positions", credential, e))
 
     positions.sort(
         key=lambda position: abs(_safe_float(position.get("unrealized_pnl"))),
@@ -418,8 +469,10 @@ async def _load_live_positions_snapshot(
     )
     return {
         "positions": positions,
-        "warnings": warnings,
+        "warnings": _dedupe_warnings(warnings),
         "has_configured_connection": context["has_configured_connection"],
+        "futures_connections_checked": futures_connections_checked,
+        "futures_fetch_errors": futures_fetch_errors,
     }
 
 
@@ -1437,7 +1490,10 @@ async def get_live_positions(user_id: str):
         message = "Partial positions data loaded. Some connections failed."
     elif not positions:
         source_state = "no_open_positions"
-        message = "No live positions were found across active exchanges."
+        if snapshot.get("futures_connections_checked", 0):
+            message = "No open futures positions were found across active futures-enabled exchanges."
+        else:
+            message = "No futures-enabled connections are active for this dashboard."
 
     return {
         "status": "ok",
@@ -1734,7 +1790,7 @@ async def get_contagion_graph_legacy(
     symbols = list(positions.keys())
 
     # ── 3. Fetch 30-day OHLCV from Binance (unauthenticated) ────────
-    ohlcv_data = await fetch_daily_ohlcv("binance", symbols, days=30)
+    ohlcv_data = await fetch_daily_ohlcv("binance", symbols, days=30, min_candles=8)
 
     # ── 4. Calculate full contagion contract ─────────────────────────
     graph_data = calculate_contagion_graph(ohlcv_data, positions, window_days=30)
@@ -1782,7 +1838,7 @@ async def get_contagion_graph(
 
     holdings_snapshot = await _load_live_holdings_snapshot(uid, scope=scope, mode=display_mode)
     positions = holdings_snapshot["holdings"]
-    warnings = holdings_snapshot["warnings"]
+    warnings = _dedupe_warnings(holdings_snapshot["warnings"])
     has_configured_connection = holdings_snapshot["has_configured_connection"]
 
     using_demo = False
@@ -1807,9 +1863,21 @@ async def get_contagion_graph(
         elif warnings:
             source_state = "error"
             message = warnings[0]
+        elif display_mode == "future" and not holdings_snapshot.get("futures_connections_checked", 0):
+            source_state = "no_connection"
+            message = f"Connect a futures-enabled exchange in the {scope_label} scope to generate this Future contagion view."
+        elif display_mode == "future" and holdings_snapshot.get("futures_connections_checked", 0):
+            source_state = "insufficient_holdings"
+            if holdings_snapshot.get("futures_positions_seen", 0) == 0:
+                message = f"No open futures exposure was found in the {scope_label} scope."
+            else:
+                message = f"Future contagion mapping needs at least two meaningful open futures underlyings in the {scope_label} scope."
         else:
             source_state = "insufficient_holdings"
-            message = f"Contagion mapping needs at least two meaningful non-stable holdings in the {scope_label} scope."
+            if display_mode == "future":
+                message = f"Future contagion mapping needs at least two meaningful open futures underlyings in the {scope_label} scope."
+            else:
+                message = f"Contagion mapping needs at least two meaningful non-stable holdings in the {scope_label} scope."
 
         return {
             "status": "ok",
@@ -1832,6 +1900,7 @@ async def get_contagion_graph(
         days=45, 
         out_warnings=warnings,
         out_meta=meta,
+        min_candles=8,
     )
     if meta.get("used_fallback"):
         market_data_source = "binance_fallback"

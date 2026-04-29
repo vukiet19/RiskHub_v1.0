@@ -108,7 +108,6 @@ export function SbtIdentityExperience() {
   const walletIndexRef = useRef(0);
 
   const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [backendIssues, setBackendIssues] = useState<string[]>([]);
   const [currentProfile, setCurrentProfile] = useState<RiskProfileSnapshot | null>(null);
   const [savedProfileHistory, setSavedProfileHistory] = useState<RiskProfileSnapshot[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
@@ -175,15 +174,12 @@ export function SbtIdentityExperience() {
           if (!current?.profile_id) return current;
           return nextHistory.find((profile) => profile.profile_id === current.profile_id) ?? null;
         });
-        setBackendIssues(nextIssues);
         setLoadState(nextLoadState);
       });
 
       if (mode === "manual") {
         if (nextLoadState === "error") {
           toast.error("Current profile refresh failed.");
-        } else if (nextLoadState === "partial") {
-          toast.message("Current profile refreshed with partial data.");
         } else {
           toast.success("Current profile refreshed.");
         }
@@ -196,7 +192,6 @@ export function SbtIdentityExperience() {
       setSelectedProfile(null);
       setSelectedProfileId(null);
       setDemoIdentitySourceProfile(null);
-      setBackendIssues([message]);
       setLoadState("error");
       toast.error(message);
     } finally {
@@ -434,11 +429,6 @@ export function SbtIdentityExperience() {
             </div>
           )}
 
-          {backendIssues.length > 0 ? (
-            <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-sm text-amber-100">
-              {backendIssues[0]}
-            </div>
-          ) : null}
         </section>
 
         <section className="glass-card rounded-3xl border border-white/6 p-5">

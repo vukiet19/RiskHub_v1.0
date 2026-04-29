@@ -65,12 +65,12 @@ export function Navbar({
     ? "text-success"
     : hasConfiguredExchangeConnection
       ? "text-primary"
-      : "text-warning-accent";
+      : "text-text-secondary";
   const refreshDotClass = hasLiveExchangeConnection
     ? "animate-pulse bg-success"
     : hasConfiguredExchangeConnection
       ? "bg-primary"
-      : "bg-warning-accent";
+      : "bg-gray-500";
 
   return (
     <header className="sticky top-0 z-30 flex min-h-20 flex-wrap items-center justify-between gap-4 bg-main-bg px-5 py-4 md:px-8">

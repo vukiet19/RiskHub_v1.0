@@ -382,45 +382,6 @@ function InsightStrip({ insight }: { insight: string }) {
   return <div className="contagion-insight" style={{ marginBottom: 10 }}>{insight}</div>;
 }
 
-function HoldingsWarningBanner({
-  title,
-  warnings,
-}: {
-  title: string;
-  warnings: string[];
-}) {
-  return (
-    <div
-      style={{
-        marginBottom: 10,
-        borderRadius: 10,
-        border: "1px solid rgba(255, 181, 154, 0.24)",
-        background: "rgba(255, 181, 154, 0.1)",
-        padding: "10px 12px",
-      }}
-    >
-      <div
-        style={{
-          fontSize: 12,
-          fontWeight: 700,
-          color: "#ffd0c0",
-          letterSpacing: "0.04em",
-          textTransform: "uppercase",
-        }}
-      >
-        {title}
-      </div>
-      <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
-        {warnings.map((warning, index) => (
-          <div key={`${warning}-${index}`} style={{ fontSize: 12, color: "#ffd8cc", lineHeight: 1.55 }}>
-            {warning}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
 function SummaryRow({ summary, clusters }: { summary: ContagionSummary; clusters: ContagionCluster[] }) {
   const deltaStr = summary.contagion_risk_delta_7d > 0
     ? `+${summary.contagion_risk_delta_7d.toFixed(1)}`
@@ -453,7 +414,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   const [data, setData] = useState<ContagionData | null>(null);
   const [sourceState, setSourceState] = useState<ContagionSourceState>("live");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
@@ -471,7 +431,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
       setError(null);
       setSourceState("live");
       setStatusMessage(null);
-      setWarnings([]);
       setResponseScope(scope);
       setScopeLabel(getScopeLabel(scope));
       setResponseMode(mode);
@@ -504,11 +463,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
       );
       setSourceState(json.source_state ?? "live");
       setStatusMessage(json.message ?? null);
-      setWarnings(
-        Array.isArray(json.warnings)
-          ? json.warnings.filter((warning): warning is string => typeof warning === "string" && warning.length > 0)
-          : [],
-      );
       if (json.data) {
         const normalized = normalizePayload(json.data as ContagionData);
         setData(normalized);
@@ -523,7 +477,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
       console.error("Failed to fetch contagion data:", err);
       setSourceState("error");
       setStatusMessage(err instanceof Error ? err.message : "Failed to load contagion data");
-      setWarnings([]);
       setResponseScope(scope);
       setScopeLabel(getScopeLabel(scope));
       setResponseMode(mode);
@@ -543,15 +496,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
     if (!data || !selectedNodeId) return null;
     return data.nodes.find((n) => n.id === selectedNodeId) || null;
   }, [data, selectedNodeId]);
-
-  const liveWarningItems = useMemo(() => {
-    const merged = [
-      statusMessage,
-      ...warnings,
-    ].filter((value): value is string => typeof value === "string" && value.length > 0);
-
-    return merged.filter((warning, index) => merged.indexOf(warning) === index);
-  }, [statusMessage, warnings]);
 
   const activeScope = responseScope;
   const activeScopeLabel = scopeLabel || getScopeLabel(activeScope);
@@ -624,9 +568,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
   const { regime, summary, nodes, edges, clusters, display } = data;
   // Keep all assets/open positions from the selected scope+mode for display decisions.
   const meaningfulNodes = nodes;
-  const shouldShowLiveWarningBanner =
-    (sourceState === "live" || sourceState === "demo") &&
-    liveWarningItems.length > 0;
 
   if (sourceState === "no_connection" || sourceState === "error") {
     const title = sourceState === "no_connection"
@@ -722,12 +663,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
             marketDataNote={marketDataNote}
             showToggle
           />
-          {shouldShowLiveWarningBanner ? (
-            <HoldingsWarningBanner
-              title="Live Holdings Warning"
-              warnings={liveWarningItems}
-            />
-          ) : null}
           <InsightStrip insight={summary.insight} />
           <SummaryRow summary={summary} clusters={clusters} />
           <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}><PairRiskFallback nodes={meaningfulNodes} edge={pairEdge} /></div>
@@ -785,12 +720,6 @@ export function PortfolioContagionMap({ userId, refreshToken = 0 }: PortfolioCon
           marketDataNote={marketDataNote}
           showToggle
         />
-        {shouldShowLiveWarningBanner ? (
-          <HoldingsWarningBanner
-            title="Live Holdings Warning"
-            warnings={liveWarningItems}
-          />
-        ) : null}
         <InsightStrip insight={summary.insight} />
         <SummaryRow summary={summary} clusters={clusters} />
       </div>

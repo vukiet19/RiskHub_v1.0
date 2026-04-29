@@ -400,6 +400,56 @@ def _position_notional_usd(raw_position: dict[str, Any]) -> Decimal:
     return abs(contracts * contract_size * mark_price)
 
 
+def _normalise_ccxt_open_positions(
+    raw_positions: list[dict[str, Any]] | None,
+    exchange_id: str,
+) -> list[dict[str, Any]]:
+    positions: list[dict[str, Any]] = []
+
+    if not isinstance(raw_positions, list):
+        return positions
+
+    for pos in raw_positions:
+        if not isinstance(pos, dict):
+            continue
+
+        contracts = _safe_decimal(pos.get("contracts"))
+        if contracts == 0:
+            continue
+
+        entry = _safe_decimal(pos.get("entryPrice"))
+        mark = _safe_decimal(pos.get("markPrice"))
+        unrealized = _safe_decimal(pos.get("unrealizedPnl"))
+        liq_price = _safe_decimal(pos.get("liquidationPrice"))
+        leverage_raw = pos.get("leverage", 1)
+        if isinstance(leverage_raw, dict):
+            leverage_raw = leverage_raw.get(pos.get("side")) or next(iter(leverage_raw.values()), 1)
+        leverage_val = int(_safe_decimal(leverage_raw, "1") or Decimal("1"))
+        contract_size = _safe_decimal(pos.get("contractSize"), "1")
+        notional_usd = _position_notional_usd(pos)
+
+        base, quote = _parse_symbol_parts(pos.get("symbol", ""))
+
+        positions.append(
+            {
+                "symbol": f"{base}{quote}",
+                "side": pos.get("side", "long"),
+                "contracts": str(abs(contracts)),
+                "contractSize": str(contract_size),
+                "entry_price": str(entry),
+                "mark_price": str(mark),
+                "unrealized_pnl": str(unrealized),
+                "liquidation_price": str(liq_price),
+                "leverage": leverage_val,
+                "margin_type": pos.get("marginMode", "cross"),
+                "exchange_id": exchange_id,
+                "notional": str(notional_usd),
+            }
+        )
+
+    return positions
+
+
 def _latest_close(candles: list[list[float]]) -> Optional[float]:
     if not candles:
         return None
@@ -1909,51 +1959,34 @@ async def fetch_open_positions(
             environment=normalized_environment,
             binance_sandbox_profile=profile,
         )
-        positions: list[dict[str, Any]] = []
 
         try:
             if exchange_id == "binance":
-                raw_rows = await exchange.fapiPrivateV2GetPositionRisk({})
-                if isinstance(raw_rows, list):
-                    return _extract_binance_open_positions_from_rows(raw_rows)
-                return []
+                try:
+                    raw_rows = await exchange.fapiPrivateV2GetPositionRisk({})
+                except Exception as direct_error:
+                    if _is_exchange_auth_error(direct_error):
+                        raise
+                    logger.warning(
+                        "binance %s positionRisk request failed on profile=%s, falling back to fetch_positions: %s",
+                        normalized_environment,
+                        profile,
+                        direct_error,
+                    )
+                    await exchange.load_markets()
+                    raw_positions = await exchange.fetch_positions(
+                        None,
+                        _binance_futures_query_params(normalized_environment),
+                    )
+                else:
+                    if isinstance(raw_rows, list):
+                        return _extract_binance_open_positions_from_rows(raw_rows)
+                    raw_positions = []
             else:
                 await exchange.load_markets()
                 raw_positions = await exchange.fetch_positions()
 
-            for pos in raw_positions:
-                contracts = _safe_decimal(pos.get("contracts"))
-                if contracts == 0:
-                    continue  # skip empty positions
-
-                entry = _safe_decimal(pos.get("entryPrice"))
-                mark = _safe_decimal(pos.get("markPrice"))
-                unrealized = _safe_decimal(pos.get("unrealizedPnl"))
-                liq_price = _safe_decimal(pos.get("liquidationPrice"))
-                leverage_val = int(pos.get("leverage", 1) or 1)
-                contract_size = _safe_decimal(pos.get("contractSize"), "1")
-                notional_usd = _position_notional_usd(pos)
-
-                base, quote = _parse_symbol_parts(pos.get("symbol", ""))
-
-                positions.append(
-                    {
-                        "symbol": f"{base}{quote}",
-                        "side": pos.get("side", "long"),
-                        "contracts": str(contracts),
-                        "contractSize": str(contract_size),
-                        "entry_price": str(entry),
-                        "mark_price": str(mark),
-                        "unrealized_pnl": str(unrealized),
-                        "liquidation_price": str(liq_price),
-                        "leverage": leverage_val,
-                        "margin_type": pos.get("marginMode", "cross"),
-                        "exchange_id": exchange_id,
-                        "notional": str(notional_usd),
-                    }
-                )
-
-            return positions
+            return _normalise_ccxt_open_positions(raw_positions, exchange_id)
         except ccxt.AuthenticationError as e:
             last_error = e
             if _should_retry_binance_profile(
@@ -1969,7 +2002,7 @@ async def fetch_open_positions(
                     profile,
                 )
                 continue
-            raise ValueError(f"Auth failed for {exchange_id}") from e
+            raise ValueError(_format_exchange_auth_error(exchange_id, e)) from e
         except Exception as e:
             last_error = e
             if _should_retry_binance_profile(
@@ -1986,6 +2019,8 @@ async def fetch_open_positions(
                     e,
                 )
                 continue
+            if _is_exchange_auth_error(e):
+                raise ValueError(_format_exchange_auth_error(exchange_id, e)) from e
             raise
         finally:
             await exchange.close()
@@ -2349,6 +2384,7 @@ async def fetch_daily_ohlcv(
     days: int = 30,
     out_warnings: Optional[list[str]] = None,
     out_meta: Optional[dict[str, Any]] = None,
+    min_candles: int = 1,
 ) -> dict[str, list[list[float]]]:
     """
     Fetch daily OHLCV data for a list of symbols for the past `days`.
@@ -2356,6 +2392,7 @@ async def fetch_daily_ohlcv(
     Returns dict mapping symbol to CCXT OHLCV list.
     """
     since = int((datetime.now(tz=timezone.utc).timestamp() - days * 86400) * 1000)
+    min_candles = max(1, int(min_candles or 1))
 
     results: dict[str, list[list[float]]] = {}
     clients: dict[str, ccxt.Exchange] = {}
@@ -2399,6 +2436,16 @@ async def fetch_daily_ohlcv(
                     try:
                         ohlcv = await client.fetch_ohlcv(market_symbol, "1d", since)
                         if not ohlcv:
+                            continue
+                        if len(ohlcv) < min_candles:
+                            logger.debug(
+                                "Skipping %s OHLCV for %s on %s: only %d candles (< %d)",
+                                market_kind,
+                                market_symbol,
+                                probe_exchange_id,
+                                len(ohlcv),
+                                min_candles,
+                            )
                             continue
 
                         results[sym] = ohlcv

@@ -1,0 +1,9 @@
+INFO:     Started server process [31380]
+INFO:     Waiting for application startup.
+2026-04-21 21:59:20,872 | INFO     | database | Connecting to MongoDB at mongodb://localhost:27017 (db=riskhub) ...
+2026-04-21 21:59:20,914 | INFO     | database | MongoDB connection established OK
+2026-04-21 21:59:20,915 | INFO     | database | Ensuring MongoDB indexes ...
+2026-04-21 21:59:20,921 | INFO     | database | All indexes ensured OK
+2026-04-21 21:59:20,922 | INFO     | riskhub | RiskHub backend is ready.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)

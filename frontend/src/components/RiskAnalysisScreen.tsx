@@ -216,7 +216,7 @@ function MetaRow({ label, value }: { label: string; value: string }) {
 function stateCopy(state: ViewState, noun: string, fallback?: string | null): string {
   if (fallback) return fallback;
   if (state === "no_connection") return `No ${noun} is available because the current mode has no active exchange connection.`;
-  if (state === "partial") return `The backend returned partial ${noun}; inspect warnings before acting on the analysis.`;
+  if (state === "partial") return `The backend returned partial ${noun} for this mode.`;
   if (state === "empty") return `The backend returned no ${noun} for this mode.`;
   if (state === "error") return `Risk analysis could not load ${noun} for this mode.`;
   return `Waiting for ${noun} from the backend.`;
@@ -255,10 +255,6 @@ export function RiskAnalysisScreen() {
         setExpandedContributorIds({});
         setViewState(stateFor(nextPayload));
       });
-      const nextWarnings = arr(nextPayload.warnings).filter((warning): warning is string => typeof warning === "string" && warning.length > 0);
-      if (nextWarnings.length > 0) {
-        toast.message("Risk analysis refreshed with warnings.", { description: nextWarnings[0] });
-      }
     } catch (error) {
       if (requestId !== requestIdRef.current) return;
       const message = error instanceof Error ? error.message : "Failed to load risk analysis data.";
@@ -278,7 +274,6 @@ export function RiskAnalysisScreen() {
     void load(scope, mode);
   }, [load, scope, mode]);
 
-  const warnings = arr(payload?.warnings).filter((warning): warning is string => typeof warning === "string" && warning.length > 0);
   const rawContributors = arr(payload?.top_risk_contributors).map(rec).filter((row): row is RecordValue => Boolean(row));
   const scenarios = arr(payload?.scenario_results).map(rec).filter((row): row is RecordValue => Boolean(row));
   const positions = arr(payload?.position_risk_rows).map(rec).filter((row): row is RecordValue => Boolean(row));
@@ -302,9 +297,7 @@ export function RiskAnalysisScreen() {
   const sharpeWindowDays = num(quantSummary?.window_days);
   const quantTradeCount = num(quantSummary?.trade_count);
   const quantScopeAlignment = txt(quantSummary?.scope_alignment, "");
-  const quantInsight = txt(quantSummary?.insight, "");
   const hasProfitFactor = profitFactorValue !== null || profitFactorDisplay.length > 0;
-  const quantHasGap = !hasProfitFactor || sharpeValue === null;
   const quantDetail = `${sharpeWindowDays !== null ? `${Math.round(sharpeWindowDays)}d` : "Latest"} closed-position snapshot${quantTradeCount !== null ? ` • ${Math.round(quantTradeCount)} positions` : ""}${quantScopeAlignment === "portfolio_wide" ? " (portfolio-wide)" : ""}`;
   const profitFactorDetail = hasProfitFactor
     ? quantDetail
@@ -402,11 +395,10 @@ export function RiskAnalysisScreen() {
               <div className="mt-1 font-mono text-sm text-text-primary">{generatedAt}</div>
             </div>
           </div>
-          {viewState !== "ready" || warnings.length > 0 ? (
-            <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${viewState === "error" ? "border-danger-container/40 bg-danger-container/10 text-danger" : "border-warning-accent/30 bg-warning-accent/10 text-warning-accent"}`}>
+          {viewState !== "ready" ? (
+            <div className={`mt-4 rounded-xl border px-4 py-3 text-sm ${viewState === "error" ? "border-danger-container/40 bg-danger-container/10 text-danger" : "border-white/8 bg-white/[0.03] text-text-primary"}`}>
               <div className="font-semibold text-white">{bannerTitle}</div>
               {message ? <div className="mt-1 leading-6 text-text-secondary">{message}</div> : null}
-              {warnings.length > 0 ? <div className="mt-2 space-y-1 text-xs leading-5">{warnings.map((warning, index) => <div key={`${warning}-${index}`}>{warning}</div>)}</div> : null}
             </div>
           ) : null}
         </div>
@@ -420,13 +412,6 @@ export function RiskAnalysisScreen() {
           <Stat label="Profit Factor" value={profitFactorDisplay || (profitFactorValue === null ? "—" : profitFactorValue.toFixed(2))} detail={profitFactorDetail} />
           <Stat label="Sharpe Ratio" value={sharpeValue === null ? "—" : sharpeValue.toFixed(2)} detail={sharpeDetail} />
         </section>
-
-        {quantHasGap && quantInsight ? (
-          <div className="rounded-2xl border border-warning-accent/30 bg-warning-accent/10 px-5 py-4 text-sm">
-            <div className="font-semibold text-white">Quant snapshot warning</div>
-            <div className="mt-1 leading-6 text-text-secondary">{quantInsight}</div>
-          </div>
-        ) : null}
 
         <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
           <Card title="Top Risk Contributors" subtitle="Largest current drivers of portfolio risk" icon={<ArrowUpRight size={16} />}>
@@ -510,7 +495,7 @@ export function RiskAnalysisScreen() {
           </Card>
 
           <Card title="Action / Attention Panel" subtitle="What deserves attention first" icon={<ShieldAlert size={16} />}>
-            {attention.length > 0 || warnings.length > 0 ? <div className="space-y-3">{attention.map((row, index) => <div key={`${txt(row.title, label(row, "Attention"))}-${index}`} className="rounded-xl border border-white/5 bg-white/[0.03] p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="font-semibold text-white">{txt(row.title, `Attention ${index + 1}`)}</div><div className="mt-1 text-sm text-text-secondary">{txt(row.detail, "Review this item in context of the current scope.")}</div></div><span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-text-primary">{txt(row.severity, "info")}</span></div></div>)}{warnings.length > 0 ? <div className="rounded-xl border border-warning-accent/30 bg-warning-accent/10 p-3 text-sm text-warning-accent"><div className="font-semibold text-white">Backend warnings</div><div className="mt-2 space-y-1 text-xs leading-5">{warnings.map((warning, index) => <div key={`${warning}-${index}`}>{warning}</div>)}</div></div> : null}</div> : <EmptyState icon={<AlertTriangle size={18} />} title="No actions pending" body="The current payload does not flag any attention items." />}
+            {attention.length > 0 ? <div className="space-y-3">{attention.map((row, index) => <div key={`${txt(row.title, label(row, "Attention"))}-${index}`} className="rounded-xl border border-white/5 bg-white/[0.03] p-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="font-semibold text-white">{txt(row.title, `Attention ${index + 1}`)}</div><div className="mt-1 text-sm text-text-secondary">{txt(row.detail, "Review this item in context of the current scope.")}</div></div><span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-text-primary">{txt(row.severity, "info")}</span></div></div>)}</div> : <EmptyState icon={<AlertTriangle size={18} />} title="No actions pending" body="The current payload does not flag any attention items." />}
           </Card>
         </section>
 

@@ -94,7 +94,6 @@ export function AlertHistoryDetailDrawer({
 }: AlertHistoryDetailDrawerProps) {
   const [relatedTrades, setRelatedTrades] = useState<AlertRelatedTrade[]>([]);
   const [missingTradeIds, setMissingTradeIds] = useState<string[]>([]);
-  const [relatedWarnings, setRelatedWarnings] = useState<string[]>([]);
   const [isRelatedTradesLoading, setIsRelatedTradesLoading] = useState(false);
   const [relatedTradesError, setRelatedTradesError] = useState<string | null>(null);
 
@@ -122,7 +121,6 @@ export function AlertHistoryDetailDrawer({
     if (!alert) {
       setRelatedTrades([]);
       setMissingTradeIds([]);
-      setRelatedWarnings([]);
       setRelatedTradesError(null);
       setIsRelatedTradesLoading(false);
       return;
@@ -133,7 +131,6 @@ export function AlertHistoryDetailDrawer({
     if (!shouldLoadRelatedTrades) {
       setRelatedTrades([]);
       setMissingTradeIds([]);
-      setRelatedWarnings([]);
       setRelatedTradesError(null);
       setIsRelatedTradesLoading(false);
       return;
@@ -147,7 +144,6 @@ export function AlertHistoryDetailDrawer({
       .then((payload) => {
         setRelatedTrades(payload.trades);
         setMissingTradeIds(payload.missing_trade_ids);
-        setRelatedWarnings(payload.warnings);
       })
       .catch((error: unknown) => {
         if (controller.signal.aborted) {
@@ -159,7 +155,6 @@ export function AlertHistoryDetailDrawer({
             : "Trade references are unavailable right now.";
         setRelatedTrades([]);
         setMissingTradeIds([]);
-        setRelatedWarnings([]);
         setRelatedTradesError(message);
       })
       .finally(() => {
@@ -323,7 +318,6 @@ export function AlertHistoryDetailDrawer({
           {hasLinkedTradeReferences ||
           relatedTrades.length > 0 ||
           missingTradeIds.length > 0 ||
-          relatedWarnings.length > 0 ||
           isRelatedTradesLoading ||
           relatedTradesError ? (
             <section className="rounded-xl border border-white/8 bg-white/[0.03] p-4">
@@ -391,23 +385,9 @@ export function AlertHistoryDetailDrawer({
                 </div>
               ) : null}
 
-              {missingTradeIds.length > 0 ? (
-                <div className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                  Some linked trades are no longer available in local history:{" "}
-                  <span className="font-mono">{missingTradeIds.join(", ")}</span>
-                </div>
-              ) : null}
-
-              {relatedWarnings.length > 0 ? (
-                <div className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
-                  {relatedWarnings[0]}
-                </div>
-              ) : null}
-
               {!isRelatedTradesLoading &&
               !relatedTradesError &&
               relatedTrades.length === 0 &&
-              missingTradeIds.length === 0 &&
               hasLinkedTradeReferences ? (
                 <div className="mt-3 rounded-lg border border-white/8 bg-main-bg/45 px-3 py-2 text-xs text-text-secondary">
                   Trade references were recorded, but no matching trade documents were returned.
