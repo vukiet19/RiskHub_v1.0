@@ -6,7 +6,7 @@ RiskHub helps crypto traders understand the risk behind their portfolio, not jus
 
 RiskHub does not give buy/sell signals. It gives risk context.
 
-![RiskHub overview](riskhub-infographic-frame-clean-landscape.png)
+![RiskHub dashboard](docs/images/riskhub-dashboard-full.png)
 
 ## Why RiskHub?
 
@@ -200,6 +200,24 @@ http://localhost:3000
 - `/risk-analysis` - advanced risk decomposition and discipline analysis
 - `/alert-history` - searchable alert audit trail
 - `/sbt-identity` - Risk Profile and SBT-ready identity experience
+
+## Product Screenshots
+
+### Dashboard
+
+![RiskHub dashboard](docs/images/riskhub-dashboard-full.png)
+
+### Risk Analysis
+
+![RiskHub risk analysis](docs/images/riskhub-risk-analysis-full.png)
+
+### Alert History
+
+![RiskHub alert history](docs/images/riskhub-alert-history-full.png)
+
+### Web3 Risk Identity
+
+![RiskHub SBT identity](docs/images/riskhub-sbt-identity-full.png)
 
 ## API Overview
 
