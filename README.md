@@ -120,7 +120,6 @@ RiskHub_v1.0/
 |   |-- src/hooks/           # Reusable frontend hooks
 |   |-- src/lib/             # API clients and helpers
 |   `-- package.json
-|-- graphify-out/            # Knowledge graph output
 `-- README.md
 ```
 
